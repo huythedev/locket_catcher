@@ -6,8 +6,8 @@ from locket import Auth, LocketAPI
 import json
 from dotenv import load_dotenv
 import logging
-import asyncio # Import asyncio
-from PIL import Image # <-- Add this import
+import asyncio
+from PIL import Image
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -25,7 +25,6 @@ if not all([Email, Password, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID]):
 
 # Initialize Telegram Bot
 try:
-    # Bot initialization remains synchronous
     bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
     logging.info("Telegram bot initialized successfully.")
 except Exception as e:
@@ -34,7 +33,6 @@ except Exception as e:
 
 # --- Authentication ---
 try:
-    # Auth remains synchronous
     auth = Auth(Email, Password)
     token = auth.get_token()
     api = LocketAPI(token)
@@ -65,10 +63,29 @@ def load_user_info(filepath):
 
 USER_ID_TO_NAME = load_user_info(USER_INFO_FILE)
 
+# --- Token Refresh Function ---
+async def refresh_token_periodically(auth_instance, api_instance):
+    while True:
+        try:
+            logging.info("Attempting to refresh Locket API token...")
+            # Run synchronous auth.get_token in a thread
+            new_token = await asyncio.to_thread(auth_instance.get_token)
+            # Update the API instance with the new token
+            api_instance.token = new_token
+            logging.info("Successfully refreshed Locket API token.")
+        except Exception as e:
+            logging.error(f"Failed to refresh token: {e}")
+            # Continue running to avoid stopping the refresh loop
+        # Wait for 30 minutes (1800 seconds)
+        await asyncio.sleep(1800)
+
 # --- Main Async Function ---
-async def main(): # Make the main logic async
+async def main():
     DOWNLOAD_DIR = "locket_downloads"
     await asyncio.to_thread(os.makedirs, DOWNLOAD_DIR, exist_ok=True)
+
+    # Start the token refresh task
+    asyncio.create_task(refresh_token_periodically(auth, api))
 
     logging.info("Starting Locket monitoring loop...")
 
@@ -81,15 +98,13 @@ async def main(): # Make the main logic async
                 data = moment_response.get('result', {}).get('data', [])
                 if data:
                     logging.info(f"Received {len(data)} moment(s) from API.")
-                    # Iterate through ALL moments in the response
-                    for moment in data: # <--- Loop through all moments
+                    for moment in data:
                         moment_id = moment.get('canonical_uid')
                         user_id = moment.get('user')
                         thumbnail_url = moment.get('thumbnail_url')
                         caption = moment.get('caption', 'No caption')
                         moment_date_seconds = moment.get('date', {}).get('_seconds', 'N/A')
 
-                        # Print details for each moment to terminal
                         print(f"\n--- Processing Moment ---")
                         print(f"  ID: {moment_id}")
                         print(f"  User: {user_id}")
@@ -103,15 +118,12 @@ async def main(): # Make the main logic async
                             png_filename = f"{moment_id}.png"
                             png_path = os.path.join(user_dir, png_filename)
 
-                            # Use custom name if available, else keep userid
                             display_name = USER_ID_TO_NAME[user_id] if user_id in USER_ID_TO_NAME else user_id
 
-                            # Check existence for *this specific* moment (PNG only)
                             image_exists = await asyncio.to_thread(os.path.exists, png_path)
                             if not image_exists:
                                 logging.info(f"Moment {moment_id} from user {user_id} not found locally. Downloading...")
                                 try:
-                                    # Download image to memory, convert to PNG, and save PNG
                                     def download_and_save_png(url, save_path):
                                         import io
                                         from PIL import Image
@@ -124,14 +136,12 @@ async def main(): # Make the main logic async
 
                                     logging.info(f"Downloaded and saved PNG image to: {png_path}")
 
-                                    # --- Send Telegram Notification (Async) ---
                                     message = f"✨ New Locket Downloaded from User: {display_name}\n"
                                     message += f"💬 Caption: {caption}\n"
                                     message += f"🆔 Moment ID: {moment_id}"
                                     try:
                                         await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
 
-                                        # Read PNG and send to Telegram
                                         def read_photo_sync():
                                             with open(png_path, 'rb') as photo_file:
                                                 return photo_file.read()
@@ -149,27 +159,24 @@ async def main(): # Make the main logic async
                                 except IOError as io_err:
                                     logging.error(f"Failed to save image to {png_path} for {moment_id}: {io_err}")
                                 except Exception as dl_err:
-                                     logging.error(f"An unexpected error occurred during download/saving for {moment_id}: {dl_err}")
+                                    logging.error(f"An unexpected error occurred during download/saving for {moment_id}: {dl_err}")
                             else:
-                                # Log skipping for this specific moment
                                 logging.info(f"Moment {moment_id} from user {user_id} already downloaded. Skipping.")
                         else:
-                            logging.warning(f"Received moment data missing required fields (moment_id, user_id, or thumbnail_url). Moment data: {moment}") # Log the problematic moment data
-                    # End of loop for moments in data
+                            logging.warning(f"Received moment data missing required fields (moment_id, user_id, or thumbnail_url). Moment data: {moment}")
                 else:
-                    # Changed log message slightly for clarity
                     logging.info("No moment data found in the API response this cycle.")
             else:
                 logging.warning(f"API call did not return status 200. Response: {moment_response}")
 
         except requests.exceptions.RequestException as e:
             logging.error(f"Network error during API call: {e}")
-            await asyncio.sleep(60) # Use asyncio.sleep
+            await asyncio.sleep(60)
         except Exception as e:
-            logging.error(f"An error occurred in the main loop: {e}", exc_info=True) # Add traceback
+            logging.error(f"An error occurred in the main loop: {e}", exc_info=True)
 
         logging.info("Waiting for 10 seconds before next check...")
-        await asyncio.sleep(10) # Use asyncio.sleep
+        await asyncio.sleep(10)
 
 # Run the async main function
 if __name__ == "__main__":
@@ -178,4 +185,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logging.info("Script stopped by user.")
     except Exception as e:
-        logging.critical(f"Script crashed: {e}", exc_info=True) # Log critical errors
+        logging.critical(f"Script crashed: {e}", exc_info=True)
