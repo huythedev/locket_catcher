@@ -72,6 +72,8 @@ async def refresh_token_periodically(auth_instance, api_instance):
             new_token = await asyncio.to_thread(auth_instance.get_token)
             # Update the API instance with the new token
             api_instance.token = new_token
+            # Update the Authorization header as well
+            api_instance.headers['Authorization'] = f'Bearer {new_token}'
             logging.info("Successfully refreshed Locket API token.")
         except Exception as e:
             logging.error(f"Failed to refresh token: {e}")
@@ -175,8 +177,8 @@ async def main():
         except Exception as e:
             logging.error(f"An error occurred in the main loop: {e}", exc_info=True)
 
-        logging.info("Waiting for 10 seconds before next check...")
-        await asyncio.sleep(10)
+        logging.info("Waiting for 5 seconds before next check...")
+        await asyncio.sleep(5)
 
 # Run the async main function
 if __name__ == "__main__":
