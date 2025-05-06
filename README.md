@@ -30,12 +30,14 @@ Downloads new Locket moments from your friends and sends notifications with the 
     pip install -r requirements.txt
     ```
 
-3.  **Create `.env` file:**
-    Copy the example file:
+3.  **Configure Environment Variables:**
+    Run the setup script:
     ```bash
-    cp .env.example .env
+    python setup.py
     ```
-    Edit the `.env` file and fill in your actual credentials:
+    This script will check if a `.env` file exists. If not, it will prompt you to enter the required information and create the file for you.
+
+    The required variables are:
     *   `EMAIL`: Your Locket account email.
     *   `PASSWORD`: Your Locket account password.
     *   `TELEGRAM_BOT_TOKEN`: Your Telegram Bot token (get from BotFather).
@@ -44,6 +46,8 @@ Downloads new Locket moments from your friends and sends notifications with the 
             *   **For a private chat with the bot:** Send the `/start` command to your bot. Then, visit `https://api.telegram.org/bot<YourBOTToken>/getUpdates` (replace `<YourBOTToken>` with your actual bot token). Look for the `"chat":{"id": ...}` value in the JSON response. This is your chat ID (usually the same as your user ID).
             *   **For a group chat:** Add your bot to the group. Send any message in the group (e.g., `/my_id @your_bot_username`). Then, visit the `getUpdates` URL as described above. Find the message you sent in the response, and look for the `"chat":{"id": ...}` value. Group chat IDs are typically negative numbers.
             *   **Alternatively:** You can use bots like `@userinfobot` or `@getmyid_bot`. Add them to your chat or send them a message, and they will tell you the chat ID.
+
+    If the `.env` file already exists, the script will let you know and check if all required variables seem to be present.
 
 4.  **(Optional) Create `users_info.txt`:**
     If you want to display custom names instead of user IDs in Telegram messages, create a file named `users_info.txt` in the same directory. Add entries in the following format, one per line:
