@@ -9,6 +9,8 @@ import logging
 import asyncio
 from PIL import Image
 from moviepy.editor import ImageSequenceClip  # Add this import
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update  # Add for buttons
+from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filters, ContextTypes  # Add for handling callbacks/messages
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -64,6 +66,11 @@ def load_user_info(filepath):
                     continue
     return user_map
 
+def save_user_info(filepath, user_map):
+    with open(filepath, "w", encoding="utf-8") as f:
+        for userid, name in user_map.items():
+            f.write(f"{userid}:{name}\n")
+
 def load_allow_list(filepath):
     """Loads the allow list from the specified file."""
     allowed_users = set()
@@ -83,6 +90,32 @@ def load_allow_list(filepath):
 
 USER_ID_TO_NAME = load_user_info(USER_INFO_FILE)
 ALLOWED_USER_IDS = load_allow_list(ALLOW_LIST_FILE)  # Load the allow list
+
+# --- Telegram Handler State ---
+RENAME_STATE = {}  # user_id: telegram_user_id -> locket_user_id being renamed
+
+# --- Telegram Callback Handlers ---
+async def rename_button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    locket_user_id = query.data.split(":")[1]
+    telegram_user_id = query.from_user.id
+    RENAME_STATE[telegram_user_id] = locket_user_id
+    await query.message.reply_text(f"Send the new name for user ID {locket_user_id}:")
+
+async def handle_rename_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    telegram_user_id = update.effective_user.id
+    if telegram_user_id in RENAME_STATE:
+        locket_user_id = RENAME_STATE.pop(telegram_user_id)
+        new_name = update.message.text.strip()
+        # Reload user info to avoid overwriting
+        user_map = load_user_info(USER_INFO_FILE)
+        user_map[locket_user_id] = new_name
+        save_user_info(USER_INFO_FILE, user_map)
+        await update.message.reply_text(f"Updated name for user {locket_user_id} to '{new_name}'.")
+    else:
+        # Not in rename state, ignore or handle as normal
+        pass
 
 # --- Token Refresh Function ---
 async def refresh_token_periodically(auth_instance, api_instance):
@@ -110,10 +143,21 @@ async def main():
     # Start the token refresh task
     asyncio.create_task(refresh_token_periodically(auth, api))
 
+    # --- Setup Telegram application for callback handling ---
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    application.add_handler(CallbackQueryHandler(rename_button_callback, pattern=r"^rename:"))
+    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_rename_message))
+    # Start polling in background
+    asyncio.create_task(application.run_polling())
+
     logging.info("Starting Locket monitoring loop...")
 
     while True:
         try:
+            # Reload user info mapping every loop to keep up to date
+            global USER_ID_TO_NAME
+            USER_ID_TO_NAME = load_user_info(USER_INFO_FILE)
+
             # Run synchronous LocketAPI call in a thread
             moment_response = await asyncio.to_thread(api.getLastMoment)
 
@@ -193,21 +237,25 @@ async def main():
                                     message = f"✨ New Locket Downloaded from User: {display_name}\n"
                                     message += f"💬 Caption: {caption}\n"
                                     message += f"🆔 Moment ID: {moment_id}"
+                                    # Add rename button
+                                    keyboard = InlineKeyboardMarkup([[
+                                        InlineKeyboardButton("Rename", callback_data=f"rename:{user_id}")
+                                    ]])
                                     try:
-                                        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+                                        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, reply_markup=keyboard)
 
                                         if media_type == "mp4":
                                             def read_video_sync():
                                                 with open(mp4_path, 'rb') as video_file:
                                                     return video_file.read()
                                             video_data = await asyncio.to_thread(read_video_sync)
-                                            await bot.send_video(chat_id=TELEGRAM_CHAT_ID, video=video_data, caption=f"Animated image from {display_name}")
+                                            await bot.send_video(chat_id=TELEGRAM_CHAT_ID, video=video_data, caption=f"Animated image from {display_name}", reply_markup=keyboard)
                                         else:
                                             def read_photo_sync():
                                                 with open(png_path, 'rb') as photo_file:
                                                     return photo_file.read()
                                             photo_data = await asyncio.to_thread(read_photo_sync)
-                                            await bot.send_photo(chat_id=TELEGRAM_CHAT_ID, photo=photo_data, caption=f"Image from {display_name}")
+                                            await bot.send_photo(chat_id=TELEGRAM_CHAT_ID, photo=photo_data, caption=f"Image from {display_name}", reply_markup=keyboard)
 
                                         logging.info(f"Sent notification for {moment_id} to Telegram chat ID: {TELEGRAM_CHAT_ID}")
                                     except telegram.error.TelegramError as tg_err:
@@ -246,4 +294,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logging.info("Script stopped by user.")
     except Exception as e:
-        logging.critical(f"Script crashed: {e}", exc_info)
+        logging.critical(f"Script crashed: {e}", exc_info=True)

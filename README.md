@@ -1,6 +1,6 @@
 # Locket Catcher
 
-Downloads new Locket moments from your friends and sends notifications with the image to a Telegram chat. It also saves the images locally, converting them to PNG format. 
+Downloads new Locket moments from your friends and sends notifications with the image to a Telegram chat. It also saves the images locally, converting them to PNG format.
 
 ## Features
 
@@ -8,6 +8,10 @@ Downloads new Locket moments from your friends and sends notifications with the 
 *   Converts animated webp images to mp4 and sends as video to Telegram.
 *   Sends static images as png to Telegram.
 *   User allow-list and user-friendly notifications.
+*   Each media message in Telegram now has a "Rename" button.  
+    *   Click "Rename" to set a display name for the user who posted the moment.
+    *   After clicking, reply with the new name.  
+    *   The mapping in `users_info.txt` is updated and reloaded automatically.
 
 ## Requirements
 
@@ -83,6 +87,8 @@ python main.py
 ```
 
 The script will start monitoring for new Locket moments. When a new moment is detected, it will be downloaded to the `locket_downloads` directory (organized by user ID), converted to PNG, and a notification will be sent to your specified Telegram chat.
+
+When a new moment is posted, you'll see a "Rename" button under the media in Telegram. Click "Rename" and reply with the desired display name for that user. The mapping in `users_info.txt` is updated and reloaded automatically.
 
 Press `Ctrl+C` to stop the script.
 
