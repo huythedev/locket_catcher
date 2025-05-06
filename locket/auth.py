@@ -50,6 +50,7 @@ class Auth:
             raise Exception('Failed to login')
 
     def get_token(self):
-        if not self.token:
-            self.create_token()
-        return self.token
+        # if not self.token:
+        #     self.create_token()
+        # return self.token
+        return self.create_token()
