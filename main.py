@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 import logging
 import asyncio
 from PIL import Image
+from moviepy.editor import ImageSequenceClip  # Add this import
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -143,25 +144,51 @@ async def main():
                             user_dir = os.path.join(DOWNLOAD_DIR, user_id)
                             await asyncio.to_thread(os.makedirs, user_dir, exist_ok=True)
                             png_filename = f"{moment_id}.png"
+                            mp4_filename = f"{moment_id}.mp4"
                             png_path = os.path.join(user_dir, png_filename)
+                            mp4_path = os.path.join(user_dir, mp4_filename)
 
                             display_name = USER_ID_TO_NAME[user_id] if user_id in USER_ID_TO_NAME else user_id
 
+                            # Check if either png or mp4 exists
                             image_exists = await asyncio.to_thread(os.path.exists, png_path)
-                            if not image_exists:
+                            video_exists = await asyncio.to_thread(os.path.exists, mp4_path)
+                            if not image_exists and not video_exists:
                                 logging.info(f"Moment {moment_id} from user {user_id} not found locally. Downloading...")
                                 try:
-                                    def download_and_save_png(url, save_path):
-                                        import io
-                                        from PIL import Image
+                                    def download_and_save_media(url, png_save_path, mp4_save_path):
                                         import requests
+                                        from PIL import Image
+                                        import io
+                                        from moviepy.editor import ImageSequenceClip
                                         response = requests.get(url, stream=True)
                                         response.raise_for_status()
-                                        img = Image.open(io.BytesIO(response.content)).convert("RGB")
-                                        img.save(save_path, "png")
-                                    await asyncio.to_thread(download_and_save_png, thumbnail_url, png_path)
+                                        img_bytes = io.BytesIO(response.content)
+                                        img = Image.open(img_bytes)
+                                        if getattr(img, "is_animated", False) and img.format.lower() == "webp":
+                                            # Animated webp: convert to mp4
+                                            frames = []
+                                            durations = []
+                                            for frame in range(img.n_frames):
+                                                img.seek(frame)
+                                                frames.append(img.convert("RGB"))
+                                                durations.append(img.info.get('duration', 100))
+                                            # Convert PIL images to numpy arrays
+                                            import numpy as np
+                                            np_frames = [np.array(f) for f in frames]
+                                            # Calculate fps from average duration
+                                            avg_duration = sum(durations) / len(durations)
+                                            fps = 1000.0 / avg_duration if avg_duration > 0 else 10
+                                            clip = ImageSequenceClip(np_frames, fps=fps)
+                                            clip.write_videofile(mp4_save_path, codec="libx264", audio=False, verbose=False, logger=None)
+                                            return "mp4"
+                                        else:
+                                            # Static image: save as png
+                                            img.convert("RGB").save(png_save_path, "png")
+                                            return "png"
+                                    media_type = await asyncio.to_thread(download_and_save_media, thumbnail_url, png_path, mp4_path)
 
-                                    logging.info(f"Downloaded and saved PNG image to: {png_path}")
+                                    logging.info(f"Downloaded and saved {media_type.upper()} to: {mp4_path if media_type == 'mp4' else png_path}")
 
                                     message = f"✨ New Locket Downloaded from User: {display_name}\n"
                                     message += f"💬 Caption: {caption}\n"
@@ -169,11 +196,18 @@ async def main():
                                     try:
                                         await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
 
-                                        def read_photo_sync():
-                                            with open(png_path, 'rb') as photo_file:
-                                                return photo_file.read()
-                                        photo_data = await asyncio.to_thread(read_photo_sync)
-                                        await bot.send_photo(chat_id=TELEGRAM_CHAT_ID, photo=photo_data, caption=f"Image from {display_name}")
+                                        if media_type == "mp4":
+                                            def read_video_sync():
+                                                with open(mp4_path, 'rb') as video_file:
+                                                    return video_file.read()
+                                            video_data = await asyncio.to_thread(read_video_sync)
+                                            await bot.send_video(chat_id=TELEGRAM_CHAT_ID, video=video_data, caption=f"Animated image from {display_name}")
+                                        else:
+                                            def read_photo_sync():
+                                                with open(png_path, 'rb') as photo_file:
+                                                    return photo_file.read()
+                                            photo_data = await asyncio.to_thread(read_photo_sync)
+                                            await bot.send_photo(chat_id=TELEGRAM_CHAT_ID, photo=photo_data, caption=f"Image from {display_name}")
 
                                         logging.info(f"Sent notification for {moment_id} to Telegram chat ID: {TELEGRAM_CHAT_ID}")
                                     except telegram.error.TelegramError as tg_err:
@@ -212,4 +246,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logging.info("Script stopped by user.")
     except Exception as e:
-        logging.critical(f"Script crashed: {e}", exc_info=True)
+        logging.critical(f"Script crashed: {e}", exc_info)

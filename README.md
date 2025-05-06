@@ -4,17 +4,24 @@ Downloads new Locket moments from your friends and sends notifications with the 
 
 ## Features
 
-*   Monitors Locket for new moments.
-*   Downloads new moments automatically.
-*   Converts downloaded WebP images to PNG.
-*   Saves images locally, organized by user ID.
-*   Sends notifications (message + image) to a specified Telegram chat.
-*   Allows mapping user IDs to custom names for notifications using `users_info.txt`.
-*   Uses asynchronous operations for better performance.
+*   Downloads static and animated Locket images.
+*   Converts animated webp images to mp4 and sends as video to Telegram.
+*   Sends static images as png to Telegram.
+*   User allow-list and user-friendly notifications.
+
+## Requirements
+
+*   Python 3.8+
+*   requests
+*   python-telegram-bot
+*   python-dotenv
+*   pillow
+*   moviepy
+*   numpy
 
 ## Prerequisites
 
-*   Python 3.7+
+*   Python 3.8+
 *   Pip (Python package installer)
 
 ## Setup
