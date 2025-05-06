@@ -7,6 +7,7 @@ import json
 from dotenv import load_dotenv
 import logging
 import asyncio
+import io
 from PIL import Image
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filters, ContextTypes
@@ -139,14 +140,20 @@ async def rename_button_callback(update: Update, context: ContextTypes.DEFAULT_T
     await query.message.reply_text(f"Send the new name for user ID {locket_user_id}:")
 
 async def handle_rename_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global USER_ID_TO_NAME  # Declare intent to modify the global variable
     telegram_user_id = update.effective_user.id
     if telegram_user_id in RENAME_STATE:
         locket_user_id = RENAME_STATE.pop(telegram_user_id)
         new_name = update.message.text.strip()
-        # Reload user info to avoid overwriting
-        user_map = load_user_info(USER_INFO_FILE)
-        user_map[locket_user_id] = new_name
-        save_user_info(USER_INFO_FILE, user_map)
+        
+        # Load current user map from file to ensure we have the latest version
+        current_user_map_from_file = load_user_info(USER_INFO_FILE)
+        current_user_map_from_file[locket_user_id] = new_name
+        save_user_info(USER_INFO_FILE, current_user_map_from_file)
+        
+        # Update the global in-memory map immediately
+        USER_ID_TO_NAME = current_user_map_from_file
+        
         await update.message.reply_text(f"Updated name for user {locket_user_id} to '{new_name}'.")
     else:
         # Not in rename state, ignore or handle as normal
