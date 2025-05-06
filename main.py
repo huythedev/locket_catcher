@@ -181,7 +181,7 @@ async def locket_monitor_loop(DOWNLOAD_DIR):
 
             # Run synchronous LocketAPI call in a thread
             moment_response = await asyncio.to_thread(api.getLastMoment)
-            print(f"API Response: {moment_response}")  # Add this line to print the API response
+            # print(f"API Response: {moment_response}")  # Add this line to print the API response
 
             if moment_response.get('result', {}).get('status') == 200:
                 data = moment_response.get('result', {}).get('data', [])
