@@ -8,9 +8,8 @@ from dotenv import load_dotenv
 import logging
 import asyncio
 from PIL import Image
-from moviepy.editor import ImageSequenceClip  # Add this import
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update  # Add for buttons
-from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filters, ContextTypes  # Add for handling callbacks/messages
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -91,6 +90,42 @@ def load_allow_list(filepath):
 USER_ID_TO_NAME = load_user_info(USER_INFO_FILE)
 ALLOWED_USER_IDS = load_allow_list(ALLOW_LIST_FILE)  # Load the allow list
 
+# --- New Download Helper Functions ---
+def download_video_file_sync(url, save_path):
+    """Downloads a video file directly from a URL and saves it."""
+    try:
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
+        with open(save_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        logging.info(f"Successfully downloaded video to {save_path}")
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Failed to download video from {url}: {e}")
+        raise
+    except IOError as e:
+        logging.error(f"Failed to save video to {save_path}: {e}")
+        raise
+
+def download_and_convert_image_to_png_sync(url, save_path):
+    """Downloads an image, converts it to PNG, and saves it."""
+    try:
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
+        img_bytes = io.BytesIO(response.content)
+        img = Image.open(img_bytes)
+        img.convert("RGB").save(save_path, "PNG")
+        logging.info(f"Successfully downloaded and converted image to PNG: {save_path}")
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Failed to download image from {url}: {e}")
+        raise
+    except IOError as e:
+        logging.error(f"Failed to save image to {save_path}: {e}")
+        raise
+    except Exception as e:  # Catch PIL errors
+        logging.error(f"Failed to process image from {url} for saving to {save_path}: {e}")
+        raise
+
 # --- Telegram Handler State ---
 RENAME_STATE = {}  # user_id: telegram_user_id -> locket_user_id being renamed
 
@@ -135,31 +170,18 @@ async def refresh_token_periodically(auth_instance, api_instance):
         # Wait for 30 minutes (1800 seconds)
         await asyncio.sleep(1800)
 
-# --- Main Async Function ---
-async def main():
-    DOWNLOAD_DIR = "locket_downloads"
-    await asyncio.to_thread(os.makedirs, DOWNLOAD_DIR, exist_ok=True)
-
-    # Start the token refresh task
-    asyncio.create_task(refresh_token_periodically(auth, api))
-
-    # --- Setup Telegram application for callback handling ---
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-    application.add_handler(CallbackQueryHandler(rename_button_callback, pattern=r"^rename:"))
-    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_rename_message))
-    # Start polling in background
-    asyncio.create_task(application.run_polling())
-
+# --- Locket Monitoring Loop ---
+async def locket_monitor_loop(DOWNLOAD_DIR):
+    global USER_ID_TO_NAME
     logging.info("Starting Locket monitoring loop...")
-
     while True:
         try:
             # Reload user info mapping every loop to keep up to date
-            global USER_ID_TO_NAME
             USER_ID_TO_NAME = load_user_info(USER_INFO_FILE)
 
             # Run synchronous LocketAPI call in a thread
             moment_response = await asyncio.to_thread(api.getLastMoment)
+            print(f"API Response: {moment_response}")  # Add this line to print the API response
 
             if moment_response.get('result', {}).get('status') == 200:
                 data = moment_response.get('result', {}).get('data', [])
@@ -169,6 +191,7 @@ async def main():
                         moment_id = moment.get('canonical_uid')
                         user_id = moment.get('user')
                         thumbnail_url = moment.get('thumbnail_url')
+                        video_url = moment.get('video_url')  # Get video_url
                         caption = moment.get('caption', 'No caption')
                         moment_date_seconds = moment.get('date', {}).get('_seconds', 'N/A')
 
@@ -179,11 +202,11 @@ async def main():
                         print(f"  Timestamp: {moment_date_seconds}")
                         print(f"-------------------------")
 
-                        if moment_id and user_id and thumbnail_url:
+                        if moment_id and user_id and (thumbnail_url or video_url):
                             # Check against allow list
                             if ALLOWED_USER_IDS and user_id not in ALLOWED_USER_IDS:
                                 logging.info(f"User {user_id} is not in the allow list. Skipping notification for moment {moment_id}.")
-                                continue  # Skip to the next moment
+                                continue
 
                             user_dir = os.path.join(DOWNLOAD_DIR, user_id)
                             await asyncio.to_thread(os.makedirs, user_dir, exist_ok=True)
@@ -192,67 +215,46 @@ async def main():
                             png_path = os.path.join(user_dir, png_filename)
                             mp4_path = os.path.join(user_dir, mp4_filename)
 
-                            display_name = USER_ID_TO_NAME[user_id] if user_id in USER_ID_TO_NAME else user_id
+                            display_name = USER_ID_TO_NAME.get(user_id, user_id)
 
-                            # Check if either png or mp4 exists
                             image_exists = await asyncio.to_thread(os.path.exists, png_path)
                             video_exists = await asyncio.to_thread(os.path.exists, mp4_path)
                             if not image_exists and not video_exists:
                                 logging.info(f"Moment {moment_id} from user {user_id} not found locally. Downloading...")
-                                try:
-                                    def download_and_save_media(url, png_save_path, mp4_save_path):
-                                        import requests
-                                        from PIL import Image
-                                        import io
-                                        from moviepy.editor import ImageSequenceClip
-                                        response = requests.get(url, stream=True)
-                                        response.raise_for_status()
-                                        img_bytes = io.BytesIO(response.content)
-                                        img = Image.open(img_bytes)
-                                        if getattr(img, "is_animated", False) and img.format.lower() == "webp":
-                                            # Animated webp: convert to mp4
-                                            frames = []
-                                            durations = []
-                                            for frame in range(img.n_frames):
-                                                img.seek(frame)
-                                                frames.append(img.convert("RGB"))
-                                                durations.append(img.info.get('duration', 100))
-                                            # Convert PIL images to numpy arrays
-                                            import numpy as np
-                                            np_frames = [np.array(f) for f in frames]
-                                            # Calculate fps from average duration
-                                            avg_duration = sum(durations) / len(durations)
-                                            fps = 1000.0 / avg_duration if avg_duration > 0 else 10
-                                            clip = ImageSequenceClip(np_frames, fps=fps)
-                                            clip.write_videofile(mp4_save_path, codec="libx264", audio=False, verbose=False, logger=None)
-                                            return "mp4"
-                                        else:
-                                            # Static image: save as png
-                                            img.convert("RGB").save(png_save_path, "png")
-                                            return "png"
-                                    media_type = await asyncio.to_thread(download_and_save_media, thumbnail_url, png_path, mp4_path)
+                                media_type = None
+                                final_media_path = None
 
-                                    logging.info(f"Downloaded and saved {media_type.upper()} to: {mp4_path if media_type == 'mp4' else png_path}")
+                                try:
+                                    if video_url:
+                                        media_type = "mp4"
+                                        final_media_path = mp4_path
+                                        await asyncio.to_thread(download_video_file_sync, video_url, mp4_path)
+                                    elif thumbnail_url:  # Fallback to thumbnail if no video_url
+                                        media_type = "png"
+                                        final_media_path = png_path
+                                        await asyncio.to_thread(download_and_convert_image_to_png_sync, thumbnail_url, png_path)
+                                    else:
+                                        logging.warning(f"No video_url or thumbnail_url for moment {moment_id}. Skipping download.")
+                                        continue  # Skip if no URL to download
+
+                                    logging.info(f"Downloaded and saved {media_type.upper()} to: {final_media_path}")
 
                                     message = f"✨ New Locket Downloaded from User: {display_name}\n"
                                     message += f"💬 Caption: {caption}\n"
                                     message += f"🆔 Moment ID: {moment_id}"
-                                    # Add rename button
-                                    keyboard = InlineKeyboardMarkup([[
-                                        InlineKeyboardButton("Rename", callback_data=f"rename:{user_id}")
-                                    ]])
+                                    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Rename", callback_data=f"rename:{user_id}")]])
                                     try:
-                                        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, reply_markup=keyboard)
+                                        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
 
                                         if media_type == "mp4":
                                             def read_video_sync():
-                                                with open(mp4_path, 'rb') as video_file:
+                                                with open(mp4_path, 'rb') as video_file:  # Use mp4_path
                                                     return video_file.read()
                                             video_data = await asyncio.to_thread(read_video_sync)
                                             await bot.send_video(chat_id=TELEGRAM_CHAT_ID, video=video_data, caption=f"Animated image from {display_name}", reply_markup=keyboard)
-                                        else:
+                                        elif media_type == "png":  # Check for png
                                             def read_photo_sync():
-                                                with open(png_path, 'rb') as photo_file:
+                                                with open(png_path, 'rb') as photo_file:  # Use png_path
                                                     return photo_file.read()
                                             photo_data = await asyncio.to_thread(read_photo_sync)
                                             await bot.send_photo(chat_id=TELEGRAM_CHAT_ID, photo=photo_data, caption=f"Image from {display_name}", reply_markup=keyboard)
@@ -264,15 +266,15 @@ async def main():
                                         logging.error(f"An unexpected error occurred sending Telegram for {moment_id}: {send_err}")
 
                                 except requests.exceptions.RequestException as req_err:
-                                    logging.error(f"Failed to download image {thumbnail_url} for {moment_id}: {req_err}")
+                                    logging.error(f"Failed to download media for {moment_id}: {req_err}")
                                 except IOError as io_err:
-                                    logging.error(f"Failed to save image to {png_path} for {moment_id}: {io_err}")
+                                    logging.error(f"Failed to save media for {moment_id}: {io_err}")
                                 except Exception as dl_err:
                                     logging.error(f"An unexpected error occurred during download/saving for {moment_id}: {dl_err}")
                             else:
                                 logging.info(f"Moment {moment_id} from user {user_id} already downloaded. Skipping.")
                         else:
-                            logging.warning(f"Received moment data missing required fields (moment_id, user_id, or thumbnail_url). Moment data: {moment}")
+                            logging.warning(f"Received moment data missing required fields (moment_id, user_id, or URLs). Moment data: {moment}")
                 else:
                     logging.info("No moment data found in the API response this cycle.")
             else:
@@ -282,10 +284,56 @@ async def main():
             logging.error(f"Network error during API call: {e}")
             await asyncio.sleep(60)
         except Exception as e:
-            logging.error(f"An error occurred in the main loop: {e}", exc_info=True)
+            logging.error(f"An error occurred in the Locket monitor loop: {e}", exc_info=True)
+            await asyncio.sleep(10)
 
-        logging.info("Waiting for 1 second before next check...")
+        logging.info("Waiting for 1 second before next Locket check...")
         await asyncio.sleep(1)
+
+# --- Main Async Function ---
+async def main():
+    DOWNLOAD_DIR = "locket_downloads"
+    await asyncio.to_thread(os.makedirs, DOWNLOAD_DIR, exist_ok=True)
+
+    # --- Setup Telegram application for callback handling ---
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    application.add_handler(CallbackQueryHandler(rename_button_callback, pattern=r"^rename:"))
+    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_rename_message))
+
+    # Start background tasks
+    token_refresh_task = asyncio.create_task(refresh_token_periodically(auth, api))
+    locket_monitor_task = asyncio.create_task(locket_monitor_loop(DOWNLOAD_DIR))
+
+    try:
+        logging.info("Initializing Telegram application...")
+        await application.initialize()
+        logging.info("Starting Telegram application polling...")
+        await application.start()
+
+        await asyncio.gather(token_refresh_task, locket_monitor_task)
+
+    except (KeyboardInterrupt, SystemExit):
+        logging.info("Shutdown signal received.")
+    except Exception as e:
+        logging.error(f"Unhandled exception in main: {e}", exc_info=True)
+    finally:
+        logging.info("Stopping Telegram application...")
+        if application.running:
+            await application.stop()
+        logging.info("Shutting down Telegram application...")
+        await application.shutdown()
+
+        if not token_refresh_task.done():
+            token_refresh_task.cancel()
+        if not locket_monitor_task.done():
+            locket_monitor_task.cancel()
+
+        try:
+            await asyncio.gather(token_refresh_task, locket_monitor_task, return_exceptions=True)
+        except asyncio.CancelledError:
+            logging.info("Background tasks cancelled.")
+
+        logging.info("Script finished.")
 
 # Run the async main function
 if __name__ == "__main__":

@@ -4,9 +4,8 @@ Downloads new Locket moments from your friends and sends notifications with the 
 
 ## Features
 
-*   Downloads static and animated Locket images.
-*   Converts animated webp images to mp4 and sends as video to Telegram.
-*   Sends static images as png to Telegram.
+*   Downloads Locket moments: videos are saved as MP4 if a direct video URL is provided by the API, otherwise images (from thumbnails) are saved as PNG.
+*   Sends downloaded media (MP4 videos or PNG images) to Telegram.
 *   User allow-list and user-friendly notifications.
 *   Each media message in Telegram now has a "Rename" button.  
     *   Click "Rename" to set a display name for the user who posted the moment.
@@ -16,12 +15,7 @@ Downloads new Locket moments from your friends and sends notifications with the 
 ## Requirements
 
 *   Python 3.8+
-*   requests
-*   python-telegram-bot
-*   python-dotenv
-*   pillow
-*   moviepy
-*   numpy
+*   See `requirements.txt` for dependencies.
 
 ## Prerequisites
 
@@ -86,7 +80,7 @@ Run the script from your terminal:
 python main.py
 ```
 
-The script will start monitoring for new Locket moments. When a new moment is detected, it will be downloaded to the `locket_downloads` directory (organized by user ID), converted to PNG, and a notification will be sent to your specified Telegram chat.
+The script will start monitoring for new Locket moments. When a new moment is detected, it will be downloaded to the `locket_downloads` directory (organized by user ID). Videos are saved as MP4s if a direct video URL is available; otherwise, images are saved as PNGs from the thumbnail URL. A notification with the media will be sent to your specified Telegram chat.
 
 When a new moment is posted, you'll see a "Rename" button under the media in Telegram. Click "Rename" and reply with the desired display name for that user. The mapping in `users_info.txt` is updated and reloaded automatically.
 

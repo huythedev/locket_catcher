@@ -2,5 +2,3 @@ requests
 python-telegram-bot
 python-dotenv
 Pillow
-moviepy
-numpy
