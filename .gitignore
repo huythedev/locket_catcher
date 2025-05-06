@@ -2,3 +2,4 @@
 __pycache__/
 locket_downloads/
 users_info.txt
+allow_list.txt

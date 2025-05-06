@@ -43,6 +43,8 @@ except Exception as e:
 
 # --- Load user info mapping ---
 USER_INFO_FILE = "users_info.txt"
+ALLOW_LIST_FILE = "allow_list.txt"  # New constant for the allow list file
+
 def load_user_info(filepath):
     user_map = {}
     if os.path.exists(filepath):
@@ -61,7 +63,25 @@ def load_user_info(filepath):
                     continue
     return user_map
 
+def load_allow_list(filepath):
+    """Loads the allow list from the specified file."""
+    allowed_users = set()
+    if os.path.exists(filepath):
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#"):  # Ignore empty lines and comments
+                        allowed_users.add(line)
+            logging.info(f"Loaded {len(allowed_users)} user(s) from allow list: {filepath}")
+        except Exception as e:
+            logging.error(f"Error loading allow list from {filepath}: {e}")
+    else:
+        logging.info(f"Allow list file not found: {filepath}. Notifications will be sent for all users.")
+    return allowed_users
+
 USER_ID_TO_NAME = load_user_info(USER_INFO_FILE)
+ALLOWED_USER_IDS = load_allow_list(ALLOW_LIST_FILE)  # Load the allow list
 
 # --- Token Refresh Function ---
 async def refresh_token_periodically(auth_instance, api_instance):
@@ -115,6 +135,11 @@ async def main():
                         print(f"-------------------------")
 
                         if moment_id and user_id and thumbnail_url:
+                            # Check against allow list
+                            if ALLOWED_USER_IDS and user_id not in ALLOWED_USER_IDS:
+                                logging.info(f"User {user_id} is not in the allow list. Skipping notification for moment {moment_id}.")
+                                continue  # Skip to the next moment
+
                             user_dir = os.path.join(DOWNLOAD_DIR, user_id)
                             await asyncio.to_thread(os.makedirs, user_dir, exist_ok=True)
                             png_filename = f"{moment_id}.png"
@@ -177,8 +202,8 @@ async def main():
         except Exception as e:
             logging.error(f"An error occurred in the main loop: {e}", exc_info=True)
 
-        logging.info("Waiting for 5 seconds before next check...")
-        await asyncio.sleep(5)
+        logging.info("Waiting for 3 seconds before next check...")
+        await asyncio.sleep(3)
 
 # Run the async main function
 if __name__ == "__main__":

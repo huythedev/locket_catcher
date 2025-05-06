@@ -57,6 +57,16 @@ Downloads new Locket moments from your friends and sends notifications with the 
     ```
     Replace `user_id_string` with the actual Locket user ID and `Custom Name` with the desired display name.
 
+5.  **(Optional) Create `allow_list.txt`:**
+    To receive notifications only for specific Locket users, create a file named `allow_list.txt` in the root directory of the project.
+    Add one Locket User ID per line in this file. For example:
+    ```
+    user_id_1_to_allow
+    another_user_id_to_allow
+    ```
+    If this file is empty or does not exist, you will receive notifications for all users.
+    An example file `allow_list.txt.example` is provided to show the format.
+
 ## Usage
 
 Run the script from your terminal:
