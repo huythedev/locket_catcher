@@ -202,8 +202,8 @@ async def main():
         except Exception as e:
             logging.error(f"An error occurred in the main loop: {e}", exc_info=True)
 
-        logging.info("Waiting for 3 seconds before next check...")
-        await asyncio.sleep(3)
+        logging.info("Waiting for 1 second before next check...")
+        await asyncio.sleep(1)
 
 # Run the async main function
 if __name__ == "__main__":
