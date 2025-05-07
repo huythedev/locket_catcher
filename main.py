@@ -4,17 +4,15 @@ from locket import Auth, LocketAPI
 from dotenv import load_dotenv
 import logging
 import asyncio
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, Chat
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from commands import (
     fetchfriends, list, allow, disallow, allowlist, rename,
     changeinfo, changeemail, changephonenumber, sendmessage
 )
 from utils.token import refresh_token_periodically
 from utils.download import download_video_file_sync, download_and_convert_image_to_png_sync
-from handlers.buttons import (
-    copy_button_handler, rename_button_handler, send_message_button_handler, cancel_rename_handler
-)
+from handlers.buttons import rename_button_handler, send_message_button_handler, cancel_rename_handler
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -350,10 +348,9 @@ async def main():
     application.add_handler(CommandHandler("changeEmail", changeemail.change_email_command_handler))
     application.add_handler(CommandHandler("changePhoneNumber", changephonenumber.change_phone_number_command_handler))
     application.add_handler(CommandHandler("sendMessage", sendmessage.send_message_command_handler))
-    application.add_handler(CallbackQueryHandler(copy_button_handler, pattern="^copy:"))
-    application.add_handler(CallbackQueryHandler(rename_button_handler, pattern="^rename:"))
-    application.add_handler(CallbackQueryHandler(send_message_button_handler, pattern="^send_message:"))
-    application.add_handler(CallbackQueryHandler(cancel_rename_handler, pattern="^cancel_rename:"))
+    application.add_handler(rename_button_handler)
+    application.add_handler(send_message_button_handler)
+    application.add_handler(cancel_rename_handler)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
     
     initialized = False

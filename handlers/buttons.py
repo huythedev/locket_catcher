@@ -1,30 +1,9 @@
 import telegram
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes
+from telegram.ext import ContextTypes, CallbackQueryHandler
 from telegram import Update
 import main
 import logging
-
-async def copy_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle the inline button press to copy a user ID."""
-    query = update.callback_query
-    try:
-        await query.answer()
-    except telegram.error.BadRequest as e:
-        if "Query is too old" in str(e) or "query id is invalid" in str(e):
-            logging.warning(f"Couldn't answer callback query: {e}")
-        else:
-            raise
-    data_parts = query.data.split(":")
-    if len(data_parts) != 2 or data_parts[0] != "copy":
-        await query.message.reply_text("❌ Invalid button data.", parse_mode="Markdown")
-        return
-    user_id = data_parts[1]
-    await query.message.reply_text(
-        f"User ID: `{user_id}`\nClick the above text to select and copy.",
-        parse_mode="MarkdownV2"
-    )
-    logging.info(f"Sent user ID {user_id} for copying in chat {query.message.chat_id}")
 
 async def rename_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the inline button press to rename a Locket user."""
@@ -97,3 +76,8 @@ async def cancel_rename_handler(update: Update, context: ContextTypes.DEFAULT_TY
         if msg_id in main.awaiting_rename_responses:
             del main.awaiting_rename_responses[msg_id]
     await query.message.edit_text(f"✅ Renaming cancelled.", parse_mode="Markdown")
+
+# Define CallbackQueryHandler instances
+rename_button_handler = CallbackQueryHandler(rename_button_handler, pattern="^rename:")
+send_message_button_handler = CallbackQueryHandler(send_message_button_handler, pattern="^send_message:")
+cancel_rename_handler = CallbackQueryHandler(cancel_rename_handler, pattern="^cancel_rename:")
