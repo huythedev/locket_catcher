@@ -1,4 +1,3 @@
-\
 import os
 import sys
 
@@ -43,9 +42,9 @@ def setup_env():
             for var, value in env_values.items():
                 # Basic quoting for values with spaces, though proper handling might be needed for complex cases
                 if ' ' in value and not (value.startswith('"') and value.endswith('"')):
-                    f.write(f'{var}="{value}"\\n')
+                    f.write(f'{var}="{value}"\n')
                 else:
-                    f.write(f"{var}={value}\\n")
+                    f.write(f"{var}={value}\n")
         print(f"Successfully created '{env_file}'.")
     except IOError as e:
         print(f"Error: Could not write to '{env_file}': {e}", file=sys.stderr)
@@ -54,4 +53,4 @@ def setup_env():
 if __name__ == "__main__":
     print("--- Locket Catcher Setup ---")
     setup_env()
-    print("\\nSetup complete. You can now run the main script using 'python main.py'.")
+    print("\nSetup complete. You can now run the main script using 'python main.py'.")
