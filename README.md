@@ -4,13 +4,14 @@ Downloads new Locket moments from your friends and sends notifications with the 
 
 ## Features
 
-*   Downloads Locket moments: videos are saved as MP4 if a direct video URL is provided by the API, otherwise images (from thumbnails) are saved as PNG.
+*   **Downloads Locket moments**: videos are saved as MP4 if a direct video URL is provided by the API, otherwise images (from thumbnails) are saved as PNG.
 *   Sends downloaded media (MP4 videos or PNG images) to Telegram.
 *   User allow-list and user-friendly notifications.
-*   Each media message in Telegram now has a "Rename" button.  
-    *   Click "Rename" to set a display name for the user who posted the moment.
-    *   After clicking, reply with the new name.  
-    *   The mapping in `users_info.txt` is updated and reloaded automatically.
+*   **User Name Management**:
+    *   Allows renaming Locket users for display in notifications via a `/rename <LocketUserID> <NewDisplayName>` command.
+    *   Provides an inline "✏️ Rename User" button under each Locket notification for easy renaming.
+    *   **Automatic User Name Fetching**: If a Locket User ID is encountered for the first time (i.e., not present in `users_info.txt`), the bot will attempt to fetch the user's first and last name from the Locket API and save it. This reduces the need for manual renaming for new users.
+*   **Allow List**: Optionally, use an `allow_list.txt` file (one Locket User ID per line) to only receive notifications for specific users. If the file doesn't exist or is empty, notifications are sent for all users.
 
 ## Prerequisites
 
@@ -66,6 +67,19 @@ Downloads new Locket moments from your friends and sends notifications with the 
     ```
     If this file is empty or does not exist, you will receive notifications for all users.
     An example file `allow_list.txt.example` is provided to show the format.
+
+### User Info (`users_info.txt`)
+
+This file stores a mapping of Locket User IDs to custom display names. The format is `LocketUserID:DisplayName` per line.
+
+Example:
+
+```
+BXcfLO4HaYWcUVz6Eduu9IzGeCl2:My Friend
+fbop9326KApSjhF16DCc:Another Friend
+```
+
+If a user ID is not found in this file, the bot will now attempt to fetch the user's name (first name + last name) from the Locket API automatically and save it to this file. You can still use the rename features to override this fetched name.
 
 ## Usage
 
