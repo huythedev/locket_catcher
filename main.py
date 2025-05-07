@@ -8,11 +8,13 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, Chat
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from commands import (
     fetchfriends, list, allow, disallow, allowlist, rename,
-    changeinfo, changeemail, changephonenumber, sendmessage
+    changeinfo, changeemail, changephonenumber, sendmessage,
+    help, clearallowlist
 )
 from utils.token import refresh_token_periodically
 from utils.download import download_video_file_sync, download_and_convert_image_to_png_sync
 from handlers.buttons import rename_button_handler, send_message_button_handler, cancel_rename_handler
+from filelock import FileLock
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -59,35 +61,38 @@ except Exception as e:
 def load_user_info(filepath):
     user_map = {}
     if os.path.exists(filepath):
-        with open(filepath, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line or ":" not in line:
-                    continue
-                try:
-                    userid, name = line.split(":", 1)
-                    userid = userid.strip().strip('"').strip("'")
-                    name = name.strip().strip('"').strip("'")
-                    if userid and name:
-                        user_map[userid] = name
-                except Exception:
-                    continue
+        with FileLock(filepath + ".lock"):
+            with open(filepath, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or ":" not in line:
+                        continue
+                    try:
+                        userid, name = line.split(":", 1)
+                        userid = userid.strip().strip('"').strip("'")
+                        name = name.strip().strip('"').strip("'")
+                        if userid and name:
+                            user_map[userid] = name
+                    except Exception:
+                        continue
     return user_map
 
 def save_user_info(filepath, user_map):
-    with open(filepath, "w", encoding="utf-8") as f:
-        for userid, name in user_map.items():
-            f.write(f"{userid}:{name}\n")
+    with FileLock(filepath + ".lock"):
+        with open(filepath, "w", encoding="utf-8") as f:
+            for userid, name in user_map.items():
+                f.write(f"{userid}:{name}\n")
 
 def load_allow_list(filepath):
     allowed_users = set()
     if os.path.exists(filepath):
         try:
-            with open(filepath, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#"):
-                        allowed_users.add(line)
+            with FileLock(filepath + ".lock"):
+                with open(filepath, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#"):
+                            allowed_users.add(line)
             logging.info(f"Loaded {len(allowed_users)} user(s) from allow list: {filepath}")
         except Exception as e:
             logging.error(f"Error loading allow list from {filepath}: {e}")
@@ -97,9 +102,10 @@ def load_allow_list(filepath):
 
 def save_allow_list(filepath, allowed_users):
     try:
-        with open(filepath, "w", encoding="utf-8") as f:
-            for userid in allowed_users:
-                f.write(f"{userid}\n")
+        with FileLock(filepath + ".lock"):
+            with open(filepath, "w", encoding="utf-8") as f:
+                for userid in allowed_users:
+                    f.write(f"{userid}\n")
         logging.info(f"Saved {len(allowed_users)} user(s) to allow list: {filepath}")
     except Exception as e:
         logging.error(f"Error saving allow list to {filepath}: {e}")
@@ -178,12 +184,17 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 # --- Locket Monitoring Loop ---
 async def locket_monitor_loop(DOWNLOAD_DIR):
-    global USER_ID_TO_NAME
+    global USER_ID_TO_NAME, ALLOWED_USER_IDS
     logging.info("Starting Locket monitoring loop...")
     
     while True:
         try:
+            # Reload user info and allow list
             USER_ID_TO_NAME.update(load_user_info(USER_INFO_FILE))
+            ALLOWED_USER_IDS.clear()
+            ALLOWED_USER_IDS.update(load_allow_list(ALLOW_LIST_FILE))
+            logging.debug("Reloaded allow list in locket_monitor_loop")
+
             moment_response = await asyncio.to_thread(api.getLastMoment)
             if moment_response.get('result', {}).get('status') == 200:
                 data = moment_response.get('result', {}).get('data', [])
@@ -348,6 +359,8 @@ async def main():
     application.add_handler(CommandHandler("changeEmail", changeemail.change_email_command_handler))
     application.add_handler(CommandHandler("changePhoneNumber", changephonenumber.change_phone_number_command_handler))
     application.add_handler(CommandHandler("sendMessage", sendmessage.send_message_command_handler))
+    application.add_handler(CommandHandler("help", help.help_command_handler))
+    application.add_handler(CommandHandler("clearallowlist", clearallowlist.clearallowlist_command_handler))
     application.add_handler(rename_button_handler)
     application.add_handler(send_message_button_handler)
     application.add_handler(cancel_rename_handler)

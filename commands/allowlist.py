@@ -43,7 +43,7 @@ async def allowlist_command_handler(update: Update, context: ContextTypes.DEFAUL
     # Send the messages
     for message_lines in messages:
         message = "\n".join(message_lines)
-        await внукаcontext.bot.send_message(
+        await context.bot.send_message(
             chat_id=chat_id,
             text=message,
             parse_mode="Markdown"
