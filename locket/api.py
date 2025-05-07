@@ -132,3 +132,21 @@ class LocketAPI:
             return response.json()
         else:
             raise Exception(f'API request failed with status code {response.status_code}: {response.text}')
+        
+    def getUserinfo(self, user_id):
+        request_payload = {
+            "data": {
+                "user_uid": user_id,
+            }
+        }
+
+        response = requests.post(
+            'https://api.locketcamera.com/fetchUserV2',
+            headers=self.headers,
+            json=request_payload
+        )
+
+        if response.ok:
+            return response.json()
+        else:
+            raise Exception(f'API request failed with status code {response.status_code}: {response.text}')

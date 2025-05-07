@@ -307,7 +307,7 @@ async def locket_monitor_loop(DOWNLOAD_DIR):
     logging.info("Starting Locket monitoring loop...")
     while True:
         try:
-            USER_ID_TO_NAME = load_user_info(USER_INFO_FILE)
+            USER_ID_TO_NAME = load_user_info(USER_INFO_FILE) # Reload at the start of each cycle
             moment_response = await asyncio.to_thread(api.getLastMoment)
             if moment_response.get('result', {}).get('status') == 200:
                 data = moment_response.get('result', {}).get('data', [])
@@ -333,7 +333,37 @@ async def locket_monitor_loop(DOWNLOAD_DIR):
                             png_path = os.path.join(user_dir, png_filename)
                             mp4_path = os.path.join(user_dir, mp4_filename)
 
-                            display_name = USER_ID_TO_NAME.get(user_id, user_id)
+                            display_name = USER_ID_TO_NAME.get(user_id)
+                            if not display_name:
+                                logging.info(f"User ID {user_id} not found in users_info.txt. Fetching from API...")
+                                try:
+                                    user_info_response = await asyncio.to_thread(api.getUserinfo, user_id)
+                                    if user_info_response.get('result', {}).get('status') == 200:
+                                        user_data = user_info_response.get('result', {}).get('data', {})
+                                        first_name = user_data.get('first_name', '')
+                                        last_name = user_data.get('last_name', '')
+                                        if first_name or last_name: # Ensure at least one name part exists
+                                            fetched_name = f"{first_name} {last_name}".strip()
+                                            if fetched_name: # Ensure the combined name is not empty
+                                                display_name = fetched_name
+                                                USER_ID_TO_NAME[user_id] = display_name
+                                                save_user_info(USER_INFO_FILE, USER_ID_TO_NAME)
+                                                logging.info(f"Fetched and saved name for {user_id}: {display_name}")
+                                            else:
+                                                logging.warning(f"Fetched name for {user_id} is empty. Using User ID.")
+                                                display_name = user_id # Fallback to user_id
+                                        else:
+                                            logging.warning(f"Could not extract first/last name for {user_id} from API. Using User ID.")
+                                            display_name = user_id # Fallback to user_id
+                                    else:
+                                        logging.warning(f"Failed to fetch user info for {user_id} from API. Status: {user_info_response.get('result', {}).get('status')}. Using User ID.")
+                                        display_name = user_id # Fallback to user_id
+                                except Exception as e_user_info:
+                                    logging.error(f"Error fetching user info for {user_id}: {e_user_info}. Using User ID.")
+                                    display_name = user_id # Fallback to user_id
+                            
+                            if not display_name: # Final fallback if display_name is still None or empty
+                                display_name = user_id
 
                             image_exists = await asyncio.to_thread(os.path.exists, png_path)
                             video_exists = await asyncio.to_thread(os.path.exists, mp4_path)
