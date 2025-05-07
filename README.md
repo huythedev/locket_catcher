@@ -12,11 +12,6 @@ Downloads new Locket moments from your friends and sends notifications with the 
     *   After clicking, reply with the new name.  
     *   The mapping in `users_info.txt` is updated and reloaded automatically.
 
-## Requirements
-
-*   Python 3.8+
-*   See `requirements.txt` for dependencies.
-
 ## Prerequisites
 
 *   Python 3.8+
