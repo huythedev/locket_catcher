@@ -15,8 +15,9 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Dictionary to track which message is expecting a name for which user ID
+# Dictionaries to track user states and responses
 awaiting_rename_responses = {}
+user_states = {}
 
 load_dotenv()
 
@@ -175,51 +176,57 @@ async def rename_command_handler(update: Update, context: ContextTypes.DEFAULT_T
             text=f"An error occurred while trying to rename user {locket_user_id}: {str(e)}"
         )
 
-# --- Telegram Button Callback Handler ---
+async def change_info_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the /changeInfo command to update the user's first and last name."""
+    chat_id = update.effective_chat.id
+    user_states[chat_id] = {"state": "awaiting_first_name"}
+    await context.bot.send_message(chat_id=chat_id, text="Please enter your new first name:")
+
+async def change_email_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the /changeEmail command to update the user's email."""
+    if not context.args:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="Usage: /changeEmail <new_email>")
+        return
+    new_email = context.args[0]
+    try:
+        await asyncio.to_thread(api.changeEmail, new_email)
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="Email changed successfully.")
+    except Exception as e:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Failed to change email: {str(e)}")
+
+async def change_phone_number_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the /changePhoneNumber command to update the user's phone number."""
+    if not context.args:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="Usage: /changePhoneNumber <new_phone_number>")
+        return
+    new_phone_number = context.args[0]
+    try:
+        await asyncio.to_thread(api.changePhoneNumber, new_phone_number)
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="Phone number change initiated. Please check for verification code.")
+    except Exception as e:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Failed to change phone number: {str(e)}")
+
+async def send_chat_message_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the /sendChatMessage command to send a chat message."""
+    args = context.args
+    if len(args) < 2:
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Usage: /sendChatMessage <receiver_uid> <message>\nExample: /sendChatMessage uid123 Hello there"
+        )
+        return
+    receiver_uid = args[0]
+    message = " ".join(args[1:])
+    try:
+        await asyncio.to_thread(api.sendChatMessage, receiver_uid, api.token, message, moment_uid=None)
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="Message sent successfully.")
+    except Exception as e:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Failed to send message: {str(e)}")
+
+# --- Telegram Button Callback Handlers ---
 async def rename_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the inline button press to rename a Locket user."""
     query = update.callback_query
-    
-    # Try to answer the callback query, but continue even if it fails
-    try:
-        await query.answer()  # Acknowledge the button press
-    except telegram.error.BadRequest as e:
-        # If the query is too old, just log it and continue
-        if "Query is too old" in str(e) or "query id is invalid" in str(e):
-            logging.warning(f"Couldn't answer callback query: {e}")
-        else:
-            # For other BadRequest errors, re-raise
-            raise
-    
-    # The callback data should be in format "rename:USER_ID"
-    data_parts = query.data.split(":")
-    if len(data_parts) != 2 or data_parts[0] != "rename":
-        await query.message.reply_text("Invalid button data. Please try again.")
-        return
-    
-    user_id = data_parts[1]
-    current_name = USER_ID_TO_NAME.get(user_id, user_id)
-    
-    # Ask user to provide a new name
-    response_message = await query.message.reply_text(
-        f"Current name for user {user_id} is '{current_name}'.\n\n"
-        f"Please reply to this message with the new display name you want to use.",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("Cancel", callback_data=f"cancel_rename:{user_id}")
-        ]])
-    )
-    
-    # Store the message ID and user ID to track the expected reply
-    awaiting_rename_responses[response_message.message_id] = user_id
-    
-    logging.info(f"Waiting for rename reply for user {user_id} on message {response_message.message_id}")
-
-# --- Cancel Rename Button Handler ---
-async def cancel_rename_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle cancellation of the rename operation."""
-    query = update.callback_query
-    
-    # Try to answer the callback query, but continue even if it fails
     try:
         await query.answer()
     except telegram.error.BadRequest as e:
@@ -227,66 +234,126 @@ async def cancel_rename_handler(update: Update, context: ContextTypes.DEFAULT_TY
             logging.warning(f"Couldn't answer callback query: {e}")
         else:
             raise
-    
+    data_parts = query.data.split(":")
+    if len(data_parts) != 2 or data_parts[0] != "rename":
+        await query.message.reply_text("Invalid button data. Please try again.")
+        return
+    user_id = data_parts[1]
+    current_name = USER_ID_TO_NAME.get(user_id, user_id)
+    response_message = await query.message.reply_text(
+        f"Current name for user {user_id} is '{current_name}'.\n\n"
+        f"Please reply to this message with the new display name you want to use.",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Cancel", callback_data=f"cancel_rename:{user_id}")]])
+    )
+    awaiting_rename_responses[response_message.message_id] = user_id
+    logging.info(f"Waiting for rename reply for user {user_id} on message {response_message.message_id}")
+
+async def send_message_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the inline button press to send a message to a Locket user."""
+    query = update.callback_query
+    try:
+        await query.answer()
+    except telegram.error.BadRequest as e:
+        if "Query is too old" in str(e) or "query id is invalid" in str(e):
+            logging.warning(f"Couldn't answer callback query: {e}")
+        else:
+            raise
+    data_parts = query.data.split(":")
+    if len(data_parts) != 3 or data_parts[0] != "send_message":
+        await query.message.reply_text("Invalid button data.")
+        return
+    user_id = data_parts[1]
+    moment_id = data_parts[2]
+    chat_id = query.message.chat_id
+    response_message = await query.message.reply_text(
+        f"Please reply to this message with the message you want to send to user {user_id}."
+    )
+    user_states[chat_id] = {
+        "state": "awaiting_send_message",
+        "receiver_uid": user_id,
+        "moment_uid": moment_id
+    }
+
+async def cancel_rename_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle cancellation of the rename operation."""
+    query = update.callback_query
+    try:
+        await query.answer()
+    except telegram.error.BadRequest as e:
+        if "Query is too old" in str(e) or "query id is invalid" in str(e):
+            logging.warning(f"Couldn't answer callback query: {e}")
+        else:
+            raise
     data_parts = query.data.split(":")
     if len(data_parts) != 2 or data_parts[0] != "cancel_rename":
         return
-    
     user_id = data_parts[1]
-    
-    # Remove the message from our tracking dict
-    # Find the message ID in awaiting_rename_responses where the value is user_id
-    message_ids_to_remove = [
-        msg_id for msg_id, uid in awaiting_rename_responses.items() if uid == user_id
-    ]
-    
+    message_ids_to_remove = [msg_id for msg_id, uid in awaiting_rename_responses.items() if uid == user_id]
     for msg_id in message_ids_to_remove:
         if msg_id in awaiting_rename_responses:
             del awaiting_rename_responses[msg_id]
-    
     await query.message.edit_text(f"Renaming cancelled.")
 
-# --- Reply Message Handler ---
-async def handle_rename_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle replies to our rename request messages."""
-    # Check if this is a reply to one of our tracked messages
-    if not update.message or not update.message.reply_to_message:
-        return
-    
-    reply_to_message_id = update.message.reply_to_message.message_id
-    
-    if reply_to_message_id in awaiting_rename_responses:
-        user_id = awaiting_rename_responses[reply_to_message_id]
-        new_name = update.message.text.strip()
-        
-        if not new_name:
-            await update.message.reply_text("The new name cannot be empty. Please try again.")
-            return
-        
-        # Update the name in our mapping
-        old_name = USER_ID_TO_NAME.get(user_id, user_id)
-        USER_ID_TO_NAME[user_id] = new_name
-        
-        # Save the updated mapping
-        save_user_info(USER_INFO_FILE, USER_ID_TO_NAME)
-        
-        await update.message.reply_text(
-            f"Successfully updated name for user {user_id} from '{old_name}' to '{new_name}'."
-        )
-        
-        # Clean up our tracking dict
-        del awaiting_rename_responses[reply_to_message_id]
-        
-        # Edit the original message to indicate completion
-        try:
-            await update.message.reply_to_message.edit_text(
-                update.message.reply_to_message.text.split("\n\n")[0] + "\n\nName updated successfully!",
-                reply_markup=None
+# --- Message Handler ---
+async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle all text messages, including replies and state-based inputs."""
+    chat_id = update.effective_chat.id
+    user_state = user_states.get(chat_id, {})
+    state = user_state.get("state")
+
+    if update.message.reply_to_message:
+        reply_to_id = update.message.reply_to_message.message_id
+        if reply_to_id in awaiting_rename_responses:
+            user_id = awaiting_rename_responses[reply_to_id]
+            new_name = update.message.text.strip()
+            if not new_name:
+                await update.message.reply_text("The new name cannot be empty. Please try again.")
+                return
+            old_name = USER_ID_TO_NAME.get(user_id, user_id)
+            USER_ID_TO_NAME[user_id] = new_name
+            save_user_info(USER_INFO_FILE, USER_ID_TO_NAME)
+            await update.message.reply_text(
+                f"Successfully updated name for user {user_id} from '{old_name}' to '{new_name}'."
             )
+            del awaiting_rename_responses[reply_to_id]
+            try:
+                await update.message.reply_to_message.edit_text(
+                    update.message.reply_to_message.text.split("\n\n")[0] + "\n\nName updated successfully!",
+                    reply_markup=None
+                )
+            except Exception as e:
+                logging.error(f"Failed to edit the message: {e}")
+            return
+
+    if state == "awaiting_first_name":
+        first_name = update.message.text.strip()
+        user_states[chat_id]["first_name"] = first_name
+        user_states[chat_id]["state"] = "awaiting_last_name"
+        await context.bot.send_message(chat_id=chat_id, text="Please enter your new last name:")
+    elif state == "awaiting_last_name":
+        last_name = update.message.text.strip()
+        first_name = user_states[chat_id]["first_name"]
+        try:
+            await asyncio.to_thread(api.changeInfo, last_name=last_name, first_name=first_name)
+            await context.bot.send_message(chat_id=chat_id, text="Successfully changed your name.")
         except Exception as e:
-            logging.error(f"Failed to edit the message: {e}")
-        
-        logging.info(f"User {update.effective_user.id} renamed Locket user {user_id} from '{old_name}' to '{new_name}' via inline button.")
+            await context.bot.send_message(chat_id=chat_id, text=f"Failed to change name: {str(e)}")
+        finally:
+            del user_states[chat_id]
+    elif state == "awaiting_send_message":
+        message = update.message.text.strip()
+        if not message:
+            await context.bot.send_message(chat_id=chat_id, text="Message cannot be empty. Please try again.")
+            return
+        receiver_uid = user_state["receiver_uid"]
+        moment_uid = user_state["moment_uid"]
+        try:
+            await asyncio.to_thread(api.sendChatMessage, receiver_uid, api.token, message, moment_uid)
+            await context.bot.send_message(chat_id=chat_id, text="Message sent successfully.")
+        except Exception as e:
+            await context.bot.send_message(chat_id=chat_id, text=f"Failed to send message: {str(e)}")
+        finally:
+            del user_states[chat_id]
 
 # --- Token Refresh Function ---
 async def refresh_token_periodically(auth_instance, api_instance):
@@ -307,7 +374,7 @@ async def locket_monitor_loop(DOWNLOAD_DIR):
     logging.info("Starting Locket monitoring loop...")
     while True:
         try:
-            USER_ID_TO_NAME = load_user_info(USER_INFO_FILE) # Reload at the start of each cycle
+            USER_ID_TO_NAME = load_user_info(USER_INFO_FILE)
             moment_response = await asyncio.to_thread(api.getLastMoment)
             if moment_response.get('result', {}).get('status') == 200:
                 data = moment_response.get('result', {}).get('data', [])
@@ -342,27 +409,24 @@ async def locket_monitor_loop(DOWNLOAD_DIR):
                                         user_data = user_info_response.get('result', {}).get('data', {})
                                         first_name = user_data.get('first_name', '')
                                         last_name = user_data.get('last_name', '')
-                                        if first_name or last_name: # Ensure at least one name part exists
+                                        if first_name or last_name:
                                             fetched_name = f"{first_name} {last_name}".strip()
-                                            if fetched_name: # Ensure the combined name is not empty
+                                            if fetched_name:
                                                 display_name = fetched_name
                                                 USER_ID_TO_NAME[user_id] = display_name
                                                 save_user_info(USER_INFO_FILE, USER_ID_TO_NAME)
                                                 logging.info(f"Fetched and saved name for {user_id}: {display_name}")
                                             else:
-                                                logging.warning(f"Fetched name for {user_id} is empty. Using User ID.")
-                                                display_name = user_id # Fallback to user_id
+                                                display_name = user_id
                                         else:
-                                            logging.warning(f"Could not extract first/last name for {user_id} from API. Using User ID.")
-                                            display_name = user_id # Fallback to user_id
+                                            display_name = user_id
                                     else:
-                                        logging.warning(f"Failed to fetch user info for {user_id} from API. Status: {user_info_response.get('result', {}).get('status')}. Using User ID.")
-                                        display_name = user_id # Fallback to user_id
+                                        display_name = user_id
                                 except Exception as e_user_info:
                                     logging.error(f"Error fetching user info for {user_id}: {e_user_info}. Using User ID.")
-                                    display_name = user_id # Fallback to user_id
-                            
-                            if not display_name: # Final fallback if display_name is still None or empty
+                                    display_name = user_id
+
+                            if not display_name:
                                 display_name = user_id
 
                             image_exists = await asyncio.to_thread(os.path.exists, png_path)
@@ -389,14 +453,15 @@ async def locket_monitor_loop(DOWNLOAD_DIR):
 
                                     message = f"✨ {display_name}\n"
                                     message += f"💬 {caption}\n"
-                                    # message += f"🆔 Moment ID: {moment_id}"
-                                    
-                                    # Create inline keyboard with rename button only
+
                                     keyboard = [
-                                        [InlineKeyboardButton("✏️ Rename User", callback_data=f"rename:{user_id}")]
+                                        [
+                                            InlineKeyboardButton("✏️ Rename User", callback_data=f"rename:{user_id}"),
+                                            InlineKeyboardButton("💬 Send Message", callback_data=f"send_message:{user_id}:{moment_id}")
+                                        ]
                                     ]
                                     reply_markup = InlineKeyboardMarkup(keyboard)
-                                    
+
                                     try:
                                         if media_type == "mp4":
                                             def read_video_sync():
@@ -404,8 +469,8 @@ async def locket_monitor_loop(DOWNLOAD_DIR):
                                                     return video_file.read()
                                             video_data = await asyncio.to_thread(read_video_sync)
                                             await bot.send_video(
-                                                chat_id=TELEGRAM_CHAT_ID, 
-                                                video=video_data, 
+                                                chat_id=TELEGRAM_CHAT_ID,
+                                                video=video_data,
                                                 caption=message,
                                                 reply_markup=reply_markup
                                             )
@@ -415,12 +480,11 @@ async def locket_monitor_loop(DOWNLOAD_DIR):
                                                     return photo_file.read()
                                             photo_data = await asyncio.to_thread(read_photo_sync)
                                             await bot.send_photo(
-                                                chat_id=TELEGRAM_CHAT_ID, 
-                                                photo=photo_data, 
+                                                chat_id=TELEGRAM_CHAT_ID,
+                                                photo=photo_data,
                                                 caption=message,
                                                 reply_markup=reply_markup
                                             )
-
                                         logging.info(f"Sent notification for {moment_id} to Telegram chat ID: {TELEGRAM_CHAT_ID}")
                                     except telegram.error.TelegramError as tg_err:
                                         logging.error(f"Failed to send Telegram notification for {moment_id}: {tg_err}")
@@ -457,20 +521,20 @@ async def main():
     DOWNLOAD_DIR = "locket_downloads"
     await asyncio.to_thread(os.makedirs, DOWNLOAD_DIR, exist_ok=True)
     
-    # Start background tasks
     token_refresh_task = asyncio.create_task(refresh_token_periodically(auth, api))
     locket_monitor_task = asyncio.create_task(locket_monitor_loop(DOWNLOAD_DIR))
     
-    # Create the application but don't start it with run_polling
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     application.add_handler(CommandHandler("rename", rename_command_handler))
-    
-    # Add handlers for button clicks and replies - removed refresh and info handlers
+    application.add_handler(CommandHandler("changeInfo", change_info_command_handler))
+    application.add_handler(CommandHandler("changeEmail", change_email_command_handler))
+    application.add_handler(CommandHandler("changePhoneNumber", change_phone_number_command_handler))
+    application.add_handler(CommandHandler("sendChatMessage", send_chat_message_command_handler))
     application.add_handler(CallbackQueryHandler(rename_button_handler, pattern="^rename:"))
+    application.add_handler(CallbackQueryHandler(send_message_button_handler, pattern="^send_message:"))
     application.add_handler(CallbackQueryHandler(cancel_rename_handler, pattern="^cancel_rename:"))
-    application.add_handler(MessageHandler(filters.REPLY & filters.TEXT & ~filters.COMMAND, handle_rename_reply))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
     
-    # Try to initialize the application with retries for network issues
     initialized = False
     max_retries = 5
     retry_count = 0
@@ -478,90 +542,67 @@ async def main():
     while not initialized and retry_count < max_retries:
         try:
             logging.info(f"Attempting to initialize application (try {retry_count+1}/{max_retries})...")
-            # Increase timeout for API requests
             telegram.request.HTTPXRequest.DEFAULT_READ_TIMEOUT = 60.0
             telegram.request.HTTPXRequest.DEFAULT_CONNECT_TIMEOUT = 60.0
-            
             await application.initialize()
-            # Get the application's own bot instance which is properly initialized
             app_bot = application.bot
-            
             try:
                 await app_bot.initialize()
                 initialized = True
                 logging.info("Application initialized successfully.")
             except telegram.error.TimedOut:
                 logging.warning("Bot initialization timed out, but continuing anyway...")
-                # We'll continue even if bot.initialize() times out
-                app_bot = bot  # Fall back to our original bot instance
+                app_bot = bot
                 initialized = True
-                
         except Exception as e:
             retry_count += 1
-            backoff_time = min(2 ** retry_count, 30)  # Exponential backoff, max 30s
+            backoff_time = min(2 ** retry_count, 30)
             logging.error(f"Failed to initialize application: {e}. Retrying in {backoff_time}s...")
             await asyncio.sleep(backoff_time)
     
     if not initialized:
         logging.error("Failed to initialize application after multiple attempts. Continuing with limited functionality.")
-        app_bot = bot  # Fall back to our original bot instance
+        app_bot = bot
     
     await application.start()
     
-    # For v20.x, we can use the application's bot instance directly for updates
     offset = 0
     logging.info("Starting manual Telegram polling...")
     
     try:
         while True:
             try:
-                # Get updates directly using the bot instance
                 updates = await app_bot.get_updates(offset=offset, timeout=30)
-                
-                # Process each update through the application
                 for update in updates:
                     offset = update.update_id + 1
-                    
-                    # Process update through the application
                     try:
                         await application.process_update(update)
                     except Exception as update_error:
                         logging.error(f"Error processing update: {update_error}")
-                    
-                # Small sleep to prevent excessive polling
                 await asyncio.sleep(0.5)
-                
             except Exception as e:
                 logging.error(f"Error in Telegram polling: {e}")
-                await asyncio.sleep(5)  # Wait a bit before retrying
-                
+                await asyncio.sleep(5)
     except (KeyboardInterrupt, SystemExit):
         logging.info("Shutdown signal received.")
     except Exception as e:
         logging.error(f"Unhandled exception in main: {e}", exc_info=True)
     finally:
         logging.info("Stopping tasks...")
-        
-        # Stop the application gracefully
         await application.stop()
         await application.shutdown()
-        
         if not token_refresh_task.done():
             token_refresh_task.cancel()
         if not locket_monitor_task.done():
             locket_monitor_task.cancel()
-            
         try:
             await asyncio.gather(token_refresh_task, locket_monitor_task, return_exceptions=True)
         except asyncio.CancelledError:
             logging.info("Background tasks cancelled.")
-            
         logging.info("Script finished.")
 
-# Run the async main function
 if __name__ == "__main__":
     try:
-        # Manual event loop management
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:

@@ -12,6 +12,56 @@ Downloads new Locket moments from your friends and sends notifications with the 
     *   Provides an inline "✏️ Rename User" button under each Locket notification for easy renaming.
     *   **Automatic User Name Fetching**: If a Locket User ID is encountered for the first time (i.e., not present in `users_info.txt`), the bot will attempt to fetch the user's first and last name from the Locket API and save it. This reduces the need for manual renaming for new users.
 *   **Allow List**: Optionally, use an `allow_list.txt` file (one Locket User ID per line) to only receive notifications for specific users. If the file doesn't exist or is empty, notifications are sent for all users.
+*   **Send Chat Message**: Send a chat message to a Locket user directly from Telegram using the `/sendChatMessage` command.
+
+## Commands Usage
+
+### `/rename`
+
+Rename a Locket user for display in notifications.
+
+```
+/rename <LocketUserID> <NewDisplayName>
+```
+Example:
+```
+/rename BXcfLO4HaYWcUVz6Eduu9IzGeCl2 MyFriendName
+```
+
+### `/sendChatMessage`
+
+Send a chat message to a Locket user.
+
+```
+/sendChatMessage <receiver_uid> <message>
+```
+Example:
+```
+/sendChatMessage AhsbdhaAUDyvasd6123uy Hello there!
+```
+
+### `/changeInfo`
+
+Change your own first and last name. The bot will prompt you for the new names.
+
+### `/changeEmail`
+
+Change your Locket account email.
+
+```
+/changeEmail <new_email>
+```
+
+### `/changePhoneNumber`
+
+Change your Locket account phone number.
+
+```
+/changePhoneNumber <new_phone_number>
+Example:
+```
+/changePhoneNumber +84123456789
+```
 
 ## Prerequisites
 

@@ -150,3 +150,89 @@ class LocketAPI:
             return response.json()
         else:
             raise Exception(f'API request failed with status code {response.status_code}: {response.text}')
+        
+    # def changeInfo requires 2 payload, the first contain "badge": "locket_gold", the second contain last_name and first_name
+    def changeInfo(self, last_name=None, first_name=None):
+        request_payload = {
+            "data": {
+                "last_name": last_name,
+                "first_name": first_name
+            }
+        }
+
+        response = requests.post(
+            'https://api.locketcamera.com/changeProfileInfo',
+            headers=self.headers,
+            json=request_payload
+        )
+
+        if response.ok:
+            return response.json()
+        else:
+            raise Exception(f'API request failed with status code {response.status_code}: {response.text}')
+        
+
+
+    def changeEmail(self, email):
+        request_payload = {
+            "data": {
+                "email": email,
+            }
+        }
+
+        response = requests.post(
+            'https://api.locketcamera.com/updateEmailAddress',
+            headers=self.headers,
+            json=request_payload
+        )
+
+        if response.ok:
+            return response.json()
+        else:
+            raise Exception(f'API request failed with status code {response.status_code}: {response.text}')
+        
+    def changePhoneNumber(self, phone_number):
+        request_payload = {
+            "data": {
+                "phone": phone_number,
+                "operation": "change_number",
+                "platform": "ios",
+                "is_retry": False
+            }
+        }
+
+        response = requests.post(
+            'https://api.locketcamera.com/sendVerificationCode',
+            headers=self.headers,
+            json=request_payload
+        )
+
+        if response.ok:
+            return response.json()
+        else:
+            raise Exception(f'API request failed with status code {response.status_code}: {response.text}')
+        
+    def sendChatMessage(self, receiver_uid, client_token, msg, moment_uid=None):
+        # Ensure that if msg is an empty string or None, it's sent as null (by converting to None)
+        actual_msg = msg if msg else None
+
+        request_payload = {
+            "data": {
+                "receiver_uid": receiver_uid,
+                "client_token": client_token,
+                "msg": actual_msg,
+                "moment_uid": moment_uid,
+                "from_memory": moment_uid is not None
+            }
+        }
+
+        response = requests.post(
+            'https://api.locketcamera.com/sendChatMessageV2',
+            headers=self.headers,
+            json=request_payload
+        )
+
+        if response.ok:
+            return response.json()
+        else:
+            raise Exception(f'API request failed with status code {response.status_code}: {response.text}')
