@@ -387,9 +387,9 @@ async def locket_monitor_loop(DOWNLOAD_DIR):
 
                                     logging.info(f"Downloaded and saved {media_type.upper()} to: {final_media_path}")
 
-                                    message = f"✨ New Locket from: {display_name}\n"
-                                    message += f"💬 Caption: {caption}\n"
-                                    message += f"🆔 Moment ID: {moment_id}"
+                                    message = f"✨ {display_name}\n"
+                                    message += f"💬 {caption}\n"
+                                    # message += f"🆔 Moment ID: {moment_id}"
                                     
                                     # Create inline keyboard with rename button only
                                     keyboard = [
