@@ -58,6 +58,7 @@ Change your Locket account phone number.
 
 ```
 /changePhoneNumber <new_phone_number>
+```
 Example:
 ```
 /changePhoneNumber +84123456789
