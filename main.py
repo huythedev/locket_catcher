@@ -92,6 +92,16 @@ def load_allow_list(filepath):
         logging.info(f"Allow list file not found: {filepath}. Notifications will be sent for all users.")
     return allowed_users
 
+def save_allow_list(filepath, allowed_users):
+    try:
+        with open(filepath, "w", encoding="utf-8") as f:
+            for userid in allowed_users:
+                f.write(f"{userid}\n")
+        logging.info(f"Saved {len(allowed_users)} user(s) to allow list: {filepath}")
+    except Exception as e:
+        logging.error(f"Error saving allow list to {filepath}: {e}")
+        raise
+
 USER_ID_TO_NAME = load_user_info(USER_INFO_FILE)
 ALLOWED_USER_IDS = load_allow_list(ALLOW_LIST_FILE)
 
@@ -265,6 +275,151 @@ async def list_friends_command_handler(update: Update, context: ContextTypes.DEF
         )
     
     logging.info(f"Sent friend list from users_info.txt to chat {chat_id}. Total friends: {len(USER_ID_TO_NAME)}")
+
+async def allow_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the /allow command to add a user ID to allow_list.txt."""
+    global ALLOWED_USER_IDS
+    chat_id = update.effective_chat.id
+    args = context.args
+
+    if not args or len(args) != 1:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="Usage: /allow <LocketUserID>\nExample: /allow BXcfLO4HaYWcUVz6Eduu9IzGeCl2",
+            parse_mode="Markdown"
+        )
+        return
+
+    user_id = args[0].strip()
+    if not user_id or any(c in user_id for c in "\n:"):
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="❌ Invalid user ID. It must be non-empty and cannot contain newlines or colons.",
+            parse_mode="Markdown"
+        )
+        return
+
+    try:
+        if user_id in ALLOWED_USER_IDS:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"✅ User ID `{user_id}` is already in the allow list.",
+                parse_mode="Markdown"
+            )
+            return
+
+        ALLOWED_USER_IDS.add(user_id)
+        save_allow_list(ALLOW_LIST_FILE, ALLOWED_USER_IDS)
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"✅ Successfully added user ID `{user_id}` to the allow list.",
+            parse_mode="Markdown"
+        )
+        logging.info(f"Added user ID {user_id} to allow_list.txt")
+    except Exception as e:
+        logging.error(f"Error adding user ID {user_id} to allow list: {e}")
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"❌ Failed to add user ID `{user_id}` to allow list: {str(e)}",
+            parse_mode="Markdown"
+        )
+
+async def disallow_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the /disallow command to remove a user ID from allow_list.txt."""
+    global ALLOWED_USER_IDS
+    chat_id = update.effective_chat.id
+    args = context.args
+
+    if not args or len(args) != 1:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="Usage: /disallow <LocketUserID>\nExample: /disallow BXcfLO4HaYWcUVz6Eduu9IzGeCl2",
+            parse_mode="Markdown"
+        )
+        return
+
+    user_id = args[0].strip()
+    if not user_id or any(c in user_id for c in "\n:"):
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="❌ Invalid user ID. It must be non-empty and cannot contain newlines or colons.",
+            parse_mode="Markdown"
+        )
+        return
+
+    try:
+        if user_id not in ALLOWED_USER_IDS:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"✅ User ID `{user_id}` is not in the allow list.",
+                parse_mode="Markdown"
+            )
+            return
+
+        ALLOWED_USER_IDS.remove(user_id)
+        save_allow_list(ALLOW_LIST_FILE, ALLOWED_USER_IDS)
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"✅ Successfully removed user ID `{user_id}` from the allow list.",
+            parse_mode="Markdown"
+        )
+        logging.info(f"Removed user ID {user_id} from allow_list.txt")
+    except Exception as e:
+        logging.error(f"Error removing user ID {user_id} from allow list: {e}")
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"❌ Failed to remove user ID `{user_id}` from allow list: {str(e)}",
+            parse_mode="Markdown"
+        )
+
+async def allowlist_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the /allowlist command to display all user IDs in allow_list.txt."""
+    global ALLOWED_USER_IDS
+    chat_id = update.effective_chat.id
+
+    if not ALLOWED_USER_IDS:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="❌ No user IDs found in the allow list. Use /allow to add users.",
+            parse_mode="Markdown"
+        )
+        return
+
+    # Prepare the allow list in chunks
+    user_ids = sorted(ALLOWED_USER_IDS)  # Sort for consistent display
+    chunk_size = 20  # Number of user IDs per message
+    messages = []
+    current_message = ["*Allow List:*"]
+    current_length = len(current_message[0]) + 2  # Account for Markdown and newline
+
+    for i, user_id in enumerate(user_ids, 1):
+        # Format each user ID entry
+        entry = f"{i}. `{user_id}`"
+        entry_length = len(entry) + 1  # Account for newline
+
+        # Check if adding this entry exceeds the Telegram message limit
+        if current_length + entry_length > 4000:
+            messages.append(current_message)
+            current_message = ["*Allow List (continued):*"]
+            current_length = len(current_message[0]) + 2
+
+        current_message.append(entry)
+        current_length += entry_length
+
+    # Append the last message if it has entries
+    if len(current_message) > 1:
+        messages.append(current_message)
+
+    # Send the messages
+    for message_lines in messages:
+        message = "\n".join(message_lines)
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=message,
+            parse_mode="Markdown"
+        )
+
+    logging.info(f"Sent allow list to chat {chat_id}. Total users: {len(ALLOWED_USER_IDS)}")
 
 async def rename_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles the /rename command to update a user's display name."""
@@ -754,6 +909,9 @@ async def main():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     application.add_handler(CommandHandler("fetchfriends", fetch_friends_command_handler))
     application.add_handler(CommandHandler("list", list_friends_command_handler))
+    application.add_handler(CommandHandler("allow", allow_command_handler))
+    application.add_handler(CommandHandler("disallow", disallow_command_handler))
+    application.add_handler(CommandHandler("allowlist", allowlist_command_handler))
     application.add_handler(CommandHandler("rename", rename_command_handler))
     application.add_handler(CommandHandler("changeInfo", change_info_command_handler))
     application.add_handler(CommandHandler("changeEmail", change_email_command_handler))

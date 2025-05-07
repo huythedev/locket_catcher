@@ -7,6 +7,7 @@ Downloads new Locket moments from your friends and sends notifications with the 
 *   **Downloads Locket moments**: Videos are saved as MP4 if a direct video URL is provided by the API; otherwise, images (from thumbnails) are saved as PNG.
 *   **Sends media to Telegram**: Downloaded MP4 videos or PNG images are sent to your specified Telegram chat.
 *   **User allow-list**: Optionally restrict notifications to specific users by listing their Locket User IDs in `allow_list.txt`.
+    *   Add or remove users from the allow-list using `/allow <userid>`, `/disallow <userid>`, and view the list with `/allowlist`.
 *   **User-friendly notifications**: Each notification includes the user's display name and an inline "✏️ Rename User" button for easy renaming.
 *   **User Name Management**:
     *   Rename Locket users for display in notifications via the `/rename <LocketUserID> <NewDisplayName>` command.
@@ -38,7 +39,7 @@ Send a chat message to a Locket user.
 ```
 Example:
 ```
-/sendChatMessage AhsbdhaAUDyvasd6123uy Hello there!
+/sendChatMessage BXcfLO4HaYWcUVz6Eduu9IzGeCl2 Hello there!
 ```
 
 ### `/changeInfo`
@@ -79,6 +80,38 @@ Fetch your current Locket friends from the Locket API and update `users_info.txt
 
 ```
 /fetchfriends
+```
+
+### `/allow`
+
+Add a Locket user ID to the allow list (`allow_list.txt`).
+
+```
+/allow <LocketUserID>
+```
+Example:
+```
+/allow BXcfLO4HaYWcUVz6Eduu9IzGeCl2
+```
+
+### `/disallow`
+
+Remove a Locket user ID from the allow list (`allow_list.txt`).
+
+```
+/disallow <LocketUserID>
+```
+Example:
+```
+/disallow BXcfLO4HaYWcUVz6Eduu9IzGeCl2
+```
+
+### `/allowlist`
+
+Show all user IDs currently in the allow list (`allow_list.txt`).
+
+```
+/allowlist
 ```
 
 ## Prerequisites
