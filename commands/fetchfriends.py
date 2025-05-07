@@ -66,7 +66,7 @@ async def fetch_friends_command_handler(update: Update, context: ContextTypes.DE
                             logging.error(f"Error fetching user info for {user_id}: {e}")
                 
                 # Small delay to avoid overwhelming the API
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(0.1)
             else:
                 logging.warning(f"getLastMoment API call failed. Status: {moment_response.get('result', {}).get('status')}")
                 await context.bot.send_message(chat_id=chat_id, text="Failed to fetch friends list due to API error.")
