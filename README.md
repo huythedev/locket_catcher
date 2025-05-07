@@ -4,15 +4,16 @@ Downloads new Locket moments from your friends and sends notifications with the 
 
 ## Features
 
-*   **Downloads Locket moments**: videos are saved as MP4 if a direct video URL is provided by the API, otherwise images (from thumbnails) are saved as PNG.
-*   Sends downloaded media (MP4 videos or PNG images) to Telegram.
-*   User allow-list and user-friendly notifications.
+*   **Downloads Locket moments**: Videos are saved as MP4 if a direct video URL is provided by the API; otherwise, images (from thumbnails) are saved as PNG.
+*   **Sends media to Telegram**: Downloaded MP4 videos or PNG images are sent to your specified Telegram chat.
+*   **User allow-list**: Optionally restrict notifications to specific users by listing their Locket User IDs in `allow_list.txt`.
+*   **User-friendly notifications**: Each notification includes the user's display name and an inline "✏️ Rename User" button for easy renaming.
 *   **User Name Management**:
-    *   Allows renaming Locket users for display in notifications via a `/rename <LocketUserID> <NewDisplayName>` command.
-    *   Provides an inline "✏️ Rename User" button under each Locket notification for easy renaming.
-    *   **Automatic User Name Fetching**: If a Locket User ID is encountered for the first time (i.e., not present in `users_info.txt`), the bot will attempt to fetch the user's first and last name from the Locket API and save it. This reduces the need for manual renaming for new users.
-*   **Allow List**: Optionally, use an `allow_list.txt` file (one Locket User ID per line) to only receive notifications for specific users. If the file doesn't exist or is empty, notifications are sent for all users.
+    *   Rename Locket users for display in notifications via the `/rename <LocketUserID> <NewDisplayName>` command.
+    *   Inline "✏️ Rename User" button under each notification for quick renaming.
+    *   **Automatic User Name Fetching**: When a new Locket User ID is detected, the bot fetches the user's first and last name from the Locket API and saves it to `users_info.txt` automatically.
 *   **Send Chat Message**: Send a chat message to a Locket user directly from Telegram using the `/sendChatMessage` command.
+*   **Change Account Info**: Change your Locket account's name, email, or phone number via Telegram commands.
 
 ## Commands Usage
 
@@ -62,6 +63,22 @@ Change your Locket account phone number.
 Example:
 ```
 /changePhoneNumber +84123456789
+```
+
+### `/list`
+
+List all known Locket users and their display names (from `users_info.txt`).
+
+```
+/list
+```
+
+### `/fetchfriends`
+
+Fetch your current Locket friends from the Locket API and update `users_info.txt` with their names.
+
+```
+/fetchfriends
 ```
 
 ## Prerequisites

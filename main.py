@@ -18,6 +18,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Dictionaries to track user states and responses
 awaiting_rename_responses = {}
 user_states = {}
+FRIENDS_LIST = set()
 
 load_dotenv()
 
@@ -129,6 +130,142 @@ def download_and_convert_image_to_png_sync(url, save_path):
         raise
 
 # --- Telegram Command Handlers ---
+async def fetch_friends_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the /fetchfriends command to fetch the list of friends."""
+    global FRIENDS_LIST, USER_ID_TO_NAME
+    chat_id = update.effective_chat.id
+    await context.bot.send_message(chat_id=chat_id, text="Fetching friends list, please wait...")
+    
+    excluded_users = []
+    FRIENDS_LIST.clear()
+    logging.info("Starting to fetch friends list via /fetchfriends...")
+    
+    while True:
+        try:
+            # Pass excluded_users as a list to the API
+            moment_response = await asyncio.to_thread(api.getLastMoment, excluded_users=excluded_users)
+            if moment_response.get('result', {}).get('status') == 200:
+                data = moment_response.get('result', {}).get('data', [])
+                if not data:
+                    logging.info("No more users found in getLastMoment response.")
+                    break
+                
+                new_users = set()
+                for moment in data:
+                    user_id = moment.get('user')
+                    if user_id and user_id not in excluded_users:
+                        new_users.add(user_id)
+                        FRIENDS_LIST.add(user_id)
+                
+                if not new_users:
+                    logging.info("No new users found in this iteration.")
+                    break
+                
+                # Add new users to excluded_users for the next iteration
+                excluded_users.extend(new_users)
+                logging.info(f"Fetched {len(new_users)} new user(s). Total friends: {len(FRIENDS_LIST)}. Excluded users: {len(excluded_users)}")
+                
+                # Update user names for new users
+                for user_id in new_users:
+                    if user_id not in USER_ID_TO_NAME:
+                        try:
+                            user_info_response = await asyncio.to_thread(api.getUserinfo, user_id)
+                            if user_info_response.get('result', {}).get('status') == 200:
+                                user_data = user_info_response.get('result', {}).get('data', {})
+                                first_name = user_data.get('first_name', '')
+                                last_name = user_data.get('last_name', '')
+                                fetched_name = f"{first_name} {last_name}".strip()
+                                if fetched_name:
+                                    USER_ID_TO_NAME[user_id] = fetched_name
+                                    save_user_info(USER_INFO_FILE, USER_ID_TO_NAME)
+                                    logging.info(f"Fetched and saved name for {user_id}: {fetched_name}")
+                                else:
+                                    USER_ID_TO_NAME[user_id] = user_id
+                                    save_user_info(USER_INFO_FILE, USER_ID_TO_NAME)
+                                    logging.info(f"No name provided for {user_id}, using user ID")
+                            else:
+                                USER_ID_TO_NAME[user_id] = user_id
+                                save_user_info(USER_INFO_FILE, USER_ID_TO_NAME)
+                                logging.warning(f"Failed to fetch user info for {user_id}. Status: {user_info_response.get('result', {}).get('status')}")
+                        except Exception as e:
+                            USER_ID_TO_NAME[user_id] = user_id
+                            save_user_info(USER_INFO_FILE, USER_ID_TO_NAME)
+                            logging.error(f"Error fetching user info for {user_id}: {e}")
+                
+                # Small delay to avoid overwhelming the API
+                await asyncio.sleep(0.1)
+            else:
+                logging.warning(f"getLastMoment API call failed. Status: {moment_response.get('result', {}).get('status')}")
+                await context.bot.send_message(chat_id=chat_id, text="Failed to fetch friends list due to API error.")
+                return
+        except Exception as e:
+            logging.error(f"Error fetching friends list: {e}")
+            await context.bot.send_message(chat_id=chat_id, text=f"Error fetching friends list: {str(e)}")
+            return
+    
+    # Send a concise summary message
+    if FRIENDS_LIST:
+        message = (
+            f"✅ Successfully fetched friends list.\n"
+            f"📊 Found {len(FRIENDS_LIST)} friends.\n"
+            f"🔍 Use /list to view the detailed friend list."
+        )
+        logging.info(f"Completed fetching friends list. Total friends: {len(FRIENDS_LIST)}")
+    else:
+        message = "❌ No friends found."
+        logging.info("No friends found in /fetchfriends.")
+    
+    await context.bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
+
+async def list_friends_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the /list command to display the friend list from users_info.txt."""
+    global USER_ID_TO_NAME
+    chat_id = update.effective_chat.id
+    
+    if not USER_ID_TO_NAME:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="❌ No friends found in users_info.txt. Please run /fetchfriends to populate the list.",
+            parse_mode="Markdown"
+        )
+        return
+    
+    # Prepare the friend list in chunks
+    friends = sorted(USER_ID_TO_NAME.items(), key=lambda x: x[0])  # Sort by user_id
+    chunk_size = 20  # Number of friends per message
+    messages = []
+    current_message = ["*Friend List:*"]
+    current_length = len(current_message[0]) + 2  # Account for Markdown and newline
+    
+    for i, (user_id, display_name) in enumerate(friends, 1):
+        # Format each friend entry
+        entry = f"{i}. *{display_name}* (`{user_id}`)"
+        entry_length = len(entry) + 1  # Account for newline
+        
+        # Check if adding this entry exceeds the Telegram message limit
+        if current_length + entry_length > 4000:
+            messages.append(current_message)
+            current_message = ["*Friend List (continued):*"]
+            current_length = len(current_message[0]) + 2
+        
+        current_message.append(entry)
+        current_length += entry_length
+    
+    # Append the last message if it has entries
+    if len(current_message) > 1:
+        messages.append(current_message)
+    
+    # Send the messages
+    for message_lines in messages:
+        message = "\n".join(message_lines)
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=message,
+            parse_mode="Markdown"
+        )
+    
+    logging.info(f"Sent friend list from users_info.txt to chat {chat_id}. Total friends: {len(USER_ID_TO_NAME)}")
+
 async def rename_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles the /rename command to update a user's display name."""
     global USER_ID_TO_NAME
@@ -143,7 +280,8 @@ async def rename_command_handler(update: Update, context: ContextTypes.DEFAULT_T
         logging.warning(f"/rename command: Incorrect arguments. User: {update.effective_user.id}, Args: {args_received}")
         await context.bot.send_message(
             chat_id=chat_id,
-            text="Usage: /rename <LocketUserID> <NewDisplayName>\nExample: /rename BXcfLO4HaYWcUVz6Eduu9IzGeCl2 MyFriendName"
+            text="Usage: /rename <LocketUserID> <NewDisplayName>\nExample: /rename BXcfLO4HaYWcUVz6Eduu9IzGeCl2 MyFriendName",
+            parse_mode="Markdown"
         )
         return
 
@@ -154,7 +292,8 @@ async def rename_command_handler(update: Update, context: ContextTypes.DEFAULT_T
         logging.warning(f"/rename command: Missing LocketUserID or NewDisplayName. User: {update.effective_user.id}, LocketUserID: '{locket_user_id}', NewName: '{new_name}'")
         await context.bot.send_message(
             chat_id=chat_id,
-            text="Error: Both Locket User ID and New Display Name must be provided.\nUsage: /rename <LocketUserID> <NewDisplayName>"
+            text="❌ Error: Both Locket User ID and New Display Name must be provided.\nUsage: /rename <LocketUserID> <NewDisplayName>",
+            parse_mode="Markdown"
         )
         return
 
@@ -167,13 +306,15 @@ async def rename_command_handler(update: Update, context: ContextTypes.DEFAULT_T
         logging.info(f"User {update.effective_user.id} renamed Locket user {locket_user_id} from '{old_name}' to '{new_name}' via /rename command.")
         await context.bot.send_message(
             chat_id=chat_id,
-            text=f"Successfully updated display name for Locket User ID '{locket_user_id}' to '{new_name}'."
+            text=f"✅ Successfully updated display name for Locket User ID '{locket_user_id}' to '{new_name}'.",
+            parse_mode="Markdown"
         )
     except Exception as e:
         logging.error(f"Error processing /rename command for user {locket_user_id} to '{new_name}': {e}", exc_info=True)
         await context.bot.send_message(
             chat_id=chat_id,
-            text=f"An error occurred while trying to rename user {locket_user_id}: {str(e)}"
+            text=f"❌ An error occurred while trying to rename user {locket_user_id}: {str(e)}",
+            parse_mode="Markdown"
         )
 
 async def change_info_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -185,45 +326,99 @@ async def change_info_command_handler(update: Update, context: ContextTypes.DEFA
 async def change_email_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles the /changeEmail command to update the user's email."""
     if not context.args:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Usage: /changeEmail <new_email>")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Usage: /changeEmail <new_email>",
+            parse_mode="Markdown"
+        )
         return
     new_email = context.args[0]
     try:
         await asyncio.to_thread(api.changeEmail, new_email)
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Email changed successfully.")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="✅ Email changed successfully.",
+            parse_mode="Markdown"
+        )
     except Exception as e:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Failed to change email: {str(e)}")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"❌ Failed to change email: {str(e)}",
+            parse_mode="Markdown"
+        )
 
 async def change_phone_number_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles the /changePhoneNumber command to update the user's phone number."""
     if not context.args:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Usage: /changePhoneNumber <new_phone_number>")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Usage: /changePhoneNumber <new_phone_number>",
+            parse_mode="Markdown"
+        )
         return
     new_phone_number = context.args[0]
     try:
         await asyncio.to_thread(api.changePhoneNumber, new_phone_number)
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Phone number change initiated. Please check for verification code.")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="✅ Phone number change initiated. Please check for verification code.",
+            parse_mode="Markdown"
+        )
     except Exception as e:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Failed to change phone number: {str(e)}")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"❌ Failed to change phone number: {str(e)}",
+            parse_mode="Markdown"
+        )
 
-async def send_chat_message_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles the /sendChatMessage command to send a chat message."""
+async def send_message_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the /sendMessage command to send a chat message."""
     args = context.args
     if len(args) < 2:
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text="Usage: /sendChatMessage <receiver_uid> <message>\nExample: /sendChatMessage uid123 Hello there"
+            text="Usage: /sendMessage <receiver_uid> <message>\nExample: /sendMessage uid123 Hello there",
+            parse_mode="Markdown"
         )
         return
     receiver_uid = args[0]
     message = " ".join(args[1:])
     try:
         await asyncio.to_thread(api.sendChatMessage, receiver_uid, api.token, message, moment_uid=None)
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Message sent successfully.")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="✅ Message sent successfully.",
+            parse_mode="Markdown"
+        )
     except Exception as e:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Failed to send message: {str(e)}")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"❌ Failed to send message: {str(e)}",
+            parse_mode="Markdown"
+        )
 
 # --- Telegram Button Callback Handlers ---
+async def copy_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the inline button press to copy a user ID."""
+    query = update.callback_query
+    try:
+        await query.answer()
+    except telegram.error.BadRequest as e:
+        if "Query is too old" in str(e) or "query id is invalid" in str(e):
+            logging.warning(f"Couldn't answer callback query: {e}")
+        else:
+            raise
+    data_parts = query.data.split(":")
+    if len(data_parts) != 2 or data_parts[0] != "copy":
+        await query.message.reply_text("❌ Invalid button data.", parse_mode="Markdown")
+        return
+    user_id = data_parts[1]
+    await query.message.reply_text(
+        f"User ID: `{user_id}`\nClick the above text to select and copy.",
+        parse_mode="MarkdownV2"
+    )
+    logging.info(f"Sent user ID {user_id} for copying in chat {query.message.chat_id}")
+
 async def rename_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the inline button press to rename a Locket user."""
     query = update.callback_query
@@ -236,13 +431,14 @@ async def rename_button_handler(update: Update, context: ContextTypes.DEFAULT_TY
             raise
     data_parts = query.data.split(":")
     if len(data_parts) != 2 or data_parts[0] != "rename":
-        await query.message.reply_text("Invalid button data. Please try again.")
+        await query.message.reply_text("❌ Invalid button data. Please try again.", parse_mode="Markdown")
         return
     user_id = data_parts[1]
     current_name = USER_ID_TO_NAME.get(user_id, user_id)
     response_message = await query.message.reply_text(
-        f"Current name for user {user_id} is '{current_name}'.\n\n"
+        f"Current name for user `{user_id}` is *{current_name}*.\n\n"
         f"Please reply to this message with the new display name you want to use.",
+        parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Cancel", callback_data=f"cancel_rename:{user_id}")]])
     )
     awaiting_rename_responses[response_message.message_id] = user_id
@@ -260,13 +456,14 @@ async def send_message_button_handler(update: Update, context: ContextTypes.DEFA
             raise
     data_parts = query.data.split(":")
     if len(data_parts) != 3 or data_parts[0] != "send_message":
-        await query.message.reply_text("Invalid button data.")
+        await query.message.reply_text("❌ Invalid button data.", parse_mode="Markdown")
         return
     user_id = data_parts[1]
     moment_id = data_parts[2]
     chat_id = query.message.chat_id
     response_message = await query.message.reply_text(
-        f"Please reply to this message with the message you want to send to user {user_id}."
+        f"Please reply to this message with the message you want to send to user `{user_id}`.",
+        parse_mode="Markdown"
     )
     user_states[chat_id] = {
         "state": "awaiting_send_message",
@@ -292,7 +489,7 @@ async def cancel_rename_handler(update: Update, context: ContextTypes.DEFAULT_TY
     for msg_id in message_ids_to_remove:
         if msg_id in awaiting_rename_responses:
             del awaiting_rename_responses[msg_id]
-    await query.message.edit_text(f"Renaming cancelled.")
+    await query.message.edit_text(f"✅ Renaming cancelled.", parse_mode="Markdown")
 
 # --- Message Handler ---
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -307,18 +504,23 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             user_id = awaiting_rename_responses[reply_to_id]
             new_name = update.message.text.strip()
             if not new_name:
-                await update.message.reply_text("The new name cannot be empty. Please try again.")
+                await update.message.reply_text(
+                    "❌ The new name cannot be empty. Please try again.",
+                    parse_mode="Markdown"
+                )
                 return
             old_name = USER_ID_TO_NAME.get(user_id, user_id)
             USER_ID_TO_NAME[user_id] = new_name
             save_user_info(USER_INFO_FILE, USER_ID_TO_NAME)
             await update.message.reply_text(
-                f"Successfully updated name for user {user_id} from '{old_name}' to '{new_name}'."
+                f"✅ Successfully updated name for user `{user_id}` from *{old_name}* to *{new_name}*.",
+                parse_mode="Markdown"
             )
             del awaiting_rename_responses[reply_to_id]
             try:
                 await update.message.reply_to_message.edit_text(
-                    update.message.reply_to_message.text.split("\n\n")[0] + "\n\nName updated successfully!",
+                    update.message.reply_to_message.text.split("\n\n")[0] + "\n\n*Name updated successfully!*",
+                    parse_mode="Markdown",
                     reply_markup=None
                 )
             except Exception as e:
@@ -335,23 +537,43 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         first_name = user_states[chat_id]["first_name"]
         try:
             await asyncio.to_thread(api.changeInfo, last_name=last_name, first_name=first_name)
-            await context.bot.send_message(chat_id=chat_id, text="Successfully changed your name.")
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="✅ Successfully changed your name.",
+                parse_mode="Markdown"
+            )
         except Exception as e:
-            await context.bot.send_message(chat_id=chat_id, text=f"Failed to change name: {str(e)}")
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"❌ Failed to change name: {str(e)}",
+                parse_mode="Markdown"
+            )
         finally:
             del user_states[chat_id]
     elif state == "awaiting_send_message":
         message = update.message.text.strip()
         if not message:
-            await context.bot.send_message(chat_id=chat_id, text="Message cannot be empty. Please try again.")
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="❌ Message cannot be empty. Please try again.",
+                parse_mode="Markdown"
+            )
             return
         receiver_uid = user_state["receiver_uid"]
         moment_uid = user_state["moment_uid"]
         try:
             await asyncio.to_thread(api.sendChatMessage, receiver_uid, api.token, message, moment_uid)
-            await context.bot.send_message(chat_id=chat_id, text="Message sent successfully.")
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="✅ Message sent successfully.",
+                parse_mode="Markdown"
+            )
         except Exception as e:
-            await context.bot.send_message(chat_id=chat_id, text=f"Failed to send message: {str(e)}")
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"❌ Failed to send message: {str(e)}",
+                parse_mode="Markdown"
+            )
         finally:
             del user_states[chat_id]
 
@@ -372,6 +594,7 @@ async def refresh_token_periodically(auth_instance, api_instance):
 async def locket_monitor_loop(DOWNLOAD_DIR):
     global USER_ID_TO_NAME
     logging.info("Starting Locket monitoring loop...")
+    
     while True:
         try:
             USER_ID_TO_NAME = load_user_info(USER_INFO_FILE)
@@ -409,22 +632,25 @@ async def locket_monitor_loop(DOWNLOAD_DIR):
                                         user_data = user_info_response.get('result', {}).get('data', {})
                                         first_name = user_data.get('first_name', '')
                                         last_name = user_data.get('last_name', '')
-                                        if first_name or last_name:
-                                            fetched_name = f"{first_name} {last_name}".strip()
-                                            if fetched_name:
-                                                display_name = fetched_name
-                                                USER_ID_TO_NAME[user_id] = display_name
-                                                save_user_info(USER_INFO_FILE, USER_ID_TO_NAME)
-                                                logging.info(f"Fetched and saved name for {user_id}: {display_name}")
-                                            else:
-                                                display_name = user_id
+                                        fetched_name = f"{first_name} {last_name}".strip()
+                                        if fetched_name:
+                                            display_name = fetched_name
+                                            USER_ID_TO_NAME[user_id] = display_name
+                                            save_user_info(USER_INFO_FILE, USER_ID_TO_NAME)
+                                            logging.info(f"Fetched and saved name for {user_id}: {display_name}")
                                         else:
                                             display_name = user_id
+                                            USER_ID_TO_NAME[user_id] = display_name
+                                            save_user_info(USER_INFO_FILE, USER_ID_TO_NAME)
                                     else:
                                         display_name = user_id
+                                        USER_ID_TO_NAME[user_id] = display_name
+                                        save_user_info(USER_INFO_FILE, USER_ID_TO_NAME)
                                 except Exception as e_user_info:
                                     logging.error(f"Error fetching user info for {user_id}: {e_user_info}. Using User ID.")
                                     display_name = user_id
+                                    USER_ID_TO_NAME[user_id] = display_name
+                                    save_user_info(USER_INFO_FILE, USER_ID_TO_NAME)
 
                             if not display_name:
                                 display_name = user_id
@@ -451,8 +677,7 @@ async def locket_monitor_loop(DOWNLOAD_DIR):
 
                                     logging.info(f"Downloaded and saved {media_type.upper()} to: {final_media_path}")
 
-                                    message = f"✨ {display_name}\n"
-                                    message += f"💬 {caption}\n"
+                                    message = f"*✨ {display_name}*\n💬 {caption}\n"
 
                                     keyboard = [
                                         [
@@ -472,6 +697,7 @@ async def locket_monitor_loop(DOWNLOAD_DIR):
                                                 chat_id=TELEGRAM_CHAT_ID,
                                                 video=video_data,
                                                 caption=message,
+                                                parse_mode="Markdown",
                                                 reply_markup=reply_markup
                                             )
                                         elif media_type == "png":
@@ -483,6 +709,7 @@ async def locket_monitor_loop(DOWNLOAD_DIR):
                                                 chat_id=TELEGRAM_CHAT_ID,
                                                 photo=photo_data,
                                                 caption=message,
+                                                parse_mode="Markdown",
                                                 reply_markup=reply_markup
                                             )
                                         logging.info(f"Sent notification for {moment_id} to Telegram chat ID: {TELEGRAM_CHAT_ID}")
@@ -525,11 +752,14 @@ async def main():
     locket_monitor_task = asyncio.create_task(locket_monitor_loop(DOWNLOAD_DIR))
     
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    application.add_handler(CommandHandler("fetchfriends", fetch_friends_command_handler))
+    application.add_handler(CommandHandler("list", list_friends_command_handler))
     application.add_handler(CommandHandler("rename", rename_command_handler))
     application.add_handler(CommandHandler("changeInfo", change_info_command_handler))
     application.add_handler(CommandHandler("changeEmail", change_email_command_handler))
     application.add_handler(CommandHandler("changePhoneNumber", change_phone_number_command_handler))
-    application.add_handler(CommandHandler("sendChatMessage", send_chat_message_command_handler))
+    application.add_handler(CommandHandler("sendMessage", send_message_command_handler))
+    application.add_handler(CallbackQueryHandler(copy_button_handler, pattern="^copy:"))
     application.add_handler(CallbackQueryHandler(rename_button_handler, pattern="^rename:"))
     application.add_handler(CallbackQueryHandler(send_message_button_handler, pattern="^send_message:"))
     application.add_handler(CallbackQueryHandler(cancel_rename_handler, pattern="^cancel_rename:"))

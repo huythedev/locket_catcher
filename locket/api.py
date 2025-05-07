@@ -105,8 +105,12 @@ class LocketAPI:
         else:
             raise Exception(f'API request failed with status code {response.status_code}: {response.text}')
 
-    def getLastMoment(self):
+    def getLastMoment(self, excluded_users=None):
         """Gets the latest moment using the provided token.
+        
+        Args:
+            excluded_users (list, optional): List of user IDs to exclude from the moment fetch.
+                                            Defaults to None, which sends an empty list.
         
         Returns:
             dict: The JSON response from the API if successful.
@@ -116,7 +120,7 @@ class LocketAPI:
         """
         request_payload = {
             "data": {
-                "excluded_users": [],
+                "excluded_users": excluded_users if excluded_users is not None else [],
                 "fetch_streak": False,
                 "should_count_missed_moments": True
             }
