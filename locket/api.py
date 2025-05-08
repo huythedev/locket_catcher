@@ -240,3 +240,21 @@ class LocketAPI:
             return response.json()
         else:
             raise Exception(f'API request failed with status code {response.status_code}: {response.text}')
+
+    def removeFriend(self, user_id):
+        request_payload = {
+            "data": {
+                "user_uid": user_id,
+            }
+        }
+
+        response = requests.post(
+            'https://api.locketcamera.com/removeFriend',
+            headers=self.headers,
+            json=request_payload
+        )
+
+        if response.ok:
+            return response.json()
+        else:
+            raise Exception(f'API request failed with status code {response.status_code}: {response.text}')
