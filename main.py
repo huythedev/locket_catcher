@@ -15,6 +15,7 @@ from utils.token import refresh_token_periodically
 from utils.download import download_video_file_sync, download_and_convert_image_to_png_sync
 from handlers.buttons import rename_button_handler, send_message_button_handler, cancel_rename_handler
 from filelock import FileLock
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -187,6 +188,9 @@ async def locket_monitor_loop(DOWNLOAD_DIR):
     global USER_ID_TO_NAME, ALLOWED_USER_IDS
     logging.info("Starting Locket monitoring loop...")
     
+    retry_delay = 10  # Initial delay in seconds
+    max_delay = 60    # Maximum delay in seconds
+    
     while True:
         try:
             # Reload user info and allow list
@@ -329,16 +333,23 @@ async def locket_monitor_loop(DOWNLOAD_DIR):
                     logging.info("No moment data found in the API response this cycle.")
             else:
                 logging.warning(f"API call did not return status 200. Response: {moment_response}")
-
+            retry_delay = 10  # Reset delay on success
         except requests.exceptions.RequestException as e:
             logging.error(f"Network error during API call: {e}")
-            await asyncio.sleep(60)
+            await asyncio.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, max_delay)  # Exponential backoff
         except Exception as e:
             logging.error(f"An error occurred in the Locket monitor loop: {e}", exc_info=True)
-            await asyncio.sleep(10)
+            await asyncio.sleep(10)  # Fixed delay for non-network errors
+        else:
+            logging.info("Waiting for 1 second before next Locket check...")
+            await asyncio.sleep(1)
 
-        logging.info("Waiting for 1 second before next Locket check...")
-        await asyncio.sleep(1)
+# --- Periodic Logger ---
+async def periodic_logger():
+    while True:
+        logging.info("Script health check: Locket monitoring and Telegram polling are active.")
+        await asyncio.sleep(300)  # Log every 5 minutes
 
 # --- Main Async Function ---
 async def main():
@@ -347,6 +358,7 @@ async def main():
     
     token_refresh_task = asyncio.create_task(refresh_token_periodically(auth, api))
     locket_monitor_task = asyncio.create_task(locket_monitor_loop(DOWNLOAD_DIR))
+    periodic_task = asyncio.create_task(periodic_logger())  # Add periodic logger
     
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     application.add_handler(CommandHandler("fetchfriends", fetchfriends.fetch_friends_command_handler))
@@ -398,6 +410,8 @@ async def main():
     await application.start()
     
     offset = 0
+    retry_delay = 5   # Initial delay in seconds
+    max_delay = 60    # Maximum delay in seconds
     logging.info("Starting manual Telegram polling...")
     
     try:
@@ -410,14 +424,14 @@ async def main():
                         await application.process_update(update)
                     except Exception as update_error:
                         logging.error(f"Error processing update: {update_error}")
+                retry_delay = 5  # Reset delay on success
                 await asyncio.sleep(0.5)
             except Exception as e:
                 logging.error(f"Error in Telegram polling: {e}")
-                await asyncio.sleep(5)
+                await asyncio.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, max_delay)  # Exponential backoff
     except (KeyboardInterrupt, SystemExit):
         logging.info("Shutdown signal received.")
-    except Exception as e:
-        logging.error(f"Unhandled exception in main: {e}", exc_info=True)
     finally:
         logging.info("Stopping tasks...")
         await application.stop()
@@ -426,21 +440,28 @@ async def main():
             token_refresh_task.cancel()
         if not locket_monitor_task.done():
             locket_monitor_task.cancel()
+        if not periodic_task.done():
+            periodic_task.cancel()
         try:
-            await asyncio.gather(token_refresh_task, locket_monitor_task, return_exceptions=True)
+            await asyncio.gather(token_refresh_task, locket_monitor_task, periodic_task, return_exceptions=True)
         except asyncio.CancelledError:
             logging.info("Background tasks cancelled.")
         logging.info("Script finished.")
 
 if __name__ == "__main__":
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+    while True:
         try:
-            loop.run_until_complete(main())
-        finally:
-            loop.close()
-    except KeyboardInterrupt:
-        logging.info("Script stopped by user.")
-    except Exception as e:
-        logging.critical(f"Script crashed: {e}", exc_info=True)
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(main())
+            finally:
+                loop.close()
+            break  # Exit the loop if main completes normally (unlikely due to infinite polling)
+        except KeyboardInterrupt:
+            logging.info("Script stopped by user.")
+            break
+        except Exception as e:
+            logging.critical(f"Script crashed: {e}", exc_info=True)
+            logging.info("Restarting in 10 seconds...")
+            time.sleep(10)  # Wait before restarting
