@@ -6,7 +6,7 @@ import logging
 def download_video_file_sync(url, save_path):
     """Download a video file from the given URL and save it to the specified path."""
     try:
-        response = requests.get(url, stream=True)
+        response = requests.get(url, stream=True, timeout=(10, 20))
         response.raise_for_status()
         with open(save_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
@@ -22,7 +22,7 @@ def download_video_file_sync(url, save_path):
 def download_and_convert_image_to_png_sync(url, save_path):
     """Download an image from the given URL, convert it to PNG, and save it."""
     try:
-        response = requests.get(url, stream=True)
+        response = requests.get(url, stream=True, timeout=(10, 20))
         response.raise_for_status()
         img_bytes = io.BytesIO(response.content)
         img = Image.open(img_bytes)

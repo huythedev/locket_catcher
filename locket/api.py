@@ -35,7 +35,8 @@ class LocketAPI:
         response = requests.post(
             'https://api.locketcamera.com/getUserByUsername',
             headers=self.headers,
-            json=request_payload
+            json=request_payload,
+            timeout=(10, 20)
         )
 
         if response.ok:
@@ -66,7 +67,8 @@ class LocketAPI:
         response = requests.post(
             'https://api.locketcamera.com/changeProfileInfo',
             headers=self.headers,
-            json=request_payload
+            json=request_payload,
+            timeout=(10, 20)
         )
 
         if response.ok:
@@ -99,7 +101,7 @@ class LocketAPI:
             "idToken": self.token
         }
 
-        response = requests.post(url, headers=headers, json=request_payload)
+        response = requests.post(url, headers=headers, json=request_payload, timeout=(10, 20))
 
         if response.ok:
             return response.json()
@@ -130,7 +132,8 @@ class LocketAPI:
         response = requests.post(
             'https://api.locketcamera.com/getLatestMomentV2',
             headers=self.headers,
-            json=request_payload
+            json=request_payload,
+            timeout=(10, 20)
         )
 
         if response.ok:
@@ -148,7 +151,8 @@ class LocketAPI:
         response = requests.post(
             'https://api.locketcamera.com/fetchUserV2',
             headers=self.headers,
-            json=request_payload
+            json=request_payload,
+            timeout=(10, 20)
         )
 
         if response.ok:
@@ -168,7 +172,8 @@ class LocketAPI:
         response = requests.post(
             'https://api.locketcamera.com/changeProfileInfo',
             headers=self.headers,
-            json=request_payload
+            json=request_payload,
+            timeout=(10, 20)
         )
 
         if response.ok:
@@ -188,7 +193,8 @@ class LocketAPI:
         response = requests.post(
             'https://api.locketcamera.com/updateEmailAddress',
             headers=self.headers,
-            json=request_payload
+            json=request_payload,
+            timeout=(10, 20)
         )
 
         if response.ok:
@@ -209,7 +215,8 @@ class LocketAPI:
         response = requests.post(
             'https://api.locketcamera.com/sendVerificationCode',
             headers=self.headers,
-            json=request_payload
+            json=request_payload,
+            timeout=(10, 20)
         )
 
         if response.ok:
@@ -234,7 +241,8 @@ class LocketAPI:
         response = requests.post(
             'https://api.locketcamera.com/sendChatMessageV2',
             headers=self.headers,
-            json=request_payload
+            json=request_payload,
+            timeout=(10, 20)
         )
 
         if response.ok:
@@ -252,7 +260,8 @@ class LocketAPI:
         response = requests.post(
             'https://api.locketcamera.com/removeFriend',
             headers=self.headers,
-            json=request_payload
+            json=request_payload,
+            timeout=(10, 20)
         )
 
         if response.ok:

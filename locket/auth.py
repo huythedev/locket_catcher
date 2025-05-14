@@ -40,7 +40,7 @@ class Auth:
             "X-Ios-Bundle-Identifier": "com.locket.Locket"
         }
 
-        response = requests.post(url, headers=headers, json=request_data)
+        response = requests.post(url, headers=headers, json=request_data, timeout=(10, 20))
 
         if response.ok:
             self.token = response.json().get('idToken')
