@@ -341,6 +341,9 @@ async def locket_monitor_loop(DOWNLOAD_DIR):
         except Exception as e:
             logging.error(f"An error occurred in the Locket monitor loop: {e}", exc_info=True)
             await asyncio.sleep(10)  # Fixed delay for non-network errors
+        except BaseException as fatal:
+            logging.critical(f"FATAL error in locket_monitor_loop: {fatal}", exc_info=True)
+            await asyncio.sleep(30)
         else:
             logging.info("Waiting for 1 second before next Locket check...")
             await asyncio.sleep(1)
@@ -357,9 +360,20 @@ async def main():
     await asyncio.to_thread(os.makedirs, DOWNLOAD_DIR, exist_ok=True)
     
     token_refresh_task = asyncio.create_task(refresh_token_periodically(auth, api))
-    locket_monitor_task = asyncio.create_task(locket_monitor_loop(DOWNLOAD_DIR))
     periodic_task = asyncio.create_task(periodic_logger())  # Add periodic logger
-    
+
+    # --- Robust locket_monitor_task restart logic ---
+    async def monitor_with_restart():
+        while True:
+            try:
+                await locket_monitor_loop(DOWNLOAD_DIR)
+            except Exception as e:
+                logging.critical(f"locket_monitor_loop crashed: {e}", exc_info=True)
+                logging.info("Restarting locket_monitor_loop in 10 seconds...")
+                await asyncio.sleep(10)
+
+    locket_monitor_task = asyncio.create_task(monitor_with_restart())
+
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     application.add_handler(CommandHandler("fetchfriends", fetchfriends.fetch_friends_command_handler))
     application.add_handler(CommandHandler("list", list.list_friends_command_handler))
