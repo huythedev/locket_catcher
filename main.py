@@ -61,7 +61,7 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID") # This is used by setup_logging
 PROXY_URL = os.getenv("PROXY_URL") # Added for Telegram proxy
 
 # Call setup_logging after TELEGRAM_CHAT_ID is loaded
-setup_logging()
+# setup_logging()
 
 
 # Shared state
@@ -421,6 +421,30 @@ async def periodic_logger():
         logging.info("Script health check: Locket monitoring and Telegram polling are active.")
         await asyncio.sleep(300)  # Log every 5 minutes
 
+# --- Register Bot Commands ---
+async def register_bot_commands(bot):
+    """Register bot commands with Telegram."""
+    commands = [
+        ("fetchfriends", "Fetch friends list"),
+        ("list", "List friends"),
+        ("allow", "Allow a user"),
+        ("disallow", "Disallow a user"),
+        ("allowlist", "Show allow list"),
+        ("rename", "Rename a user"),
+        ("changeEmail", "Change email"),
+        ("changePhoneNumber", "Change phone number"),
+        ("sendMessage", "Send a message"),
+        ("help", "Show help"),
+        ("clearallowlist", "Clear allow list"),
+    ]
+
+    bot_commands = [telegram.BotCommand(command, description) for command, description in commands]
+    try:
+        await bot.set_my_commands(bot_commands)
+        logging.info("Bot commands registered successfully.")
+    except Exception as e:
+        logging.error(f"Failed to register bot commands: {e}")
+
 # --- Main Async Function ---
 async def main():
     DOWNLOAD_DIR = "locket_downloads"
@@ -505,6 +529,10 @@ async def main():
     
     await application.start()
     
+    # Register bot commands with Telegram
+    if initialized:
+        await register_bot_commands(app_bot)
+
     offset = 0
     retry_delay = 5   # Initial delay in seconds
     max_delay = 60    # Maximum delay in seconds
