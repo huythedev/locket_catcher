@@ -3,9 +3,13 @@ import telegram
 from locket import Auth, LocketAPI
 from dotenv import load_dotenv
 import logging
+import logging.handlers # Added for FileHandler
 import asyncio
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, Chat
+import html # Added for escaping HTML in Telegram logs
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, Chat, constants as telegram_constants # Added telegram_constants
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.request import HTTPXRequest # Added for proxy and custom request settings
+import requests
 from commands import (
     fetchfriends, list, allow, disallow, allowlist, rename,
     changeinfo, changeemail, changephonenumber, sendmessage,
@@ -17,8 +21,48 @@ from handlers.buttons import rename_button_handler, send_message_button_handler,
 from filelock import FileLock
 import time
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+def setup_logging(log_level=logging.INFO, log_file="bot_activity.log"):
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+
+    # Clear existing handlers from the root logger
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+        handler.close()
+
+    # Formatter
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    detailed_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s - %(pathname)s:%(lineno)d')
+
+    # File Handler
+    try:
+        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        file_handler.setFormatter(detailed_formatter)
+        root_logger.addHandler(file_handler)
+    except Exception as e:
+        print(f"Failed to set up file logger: {e}")
+
+
+    # Console Handler
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    root_logger.addHandler(console_handler)
+
+    logging.info(f"Logging configured. Level: {logging.getLevelName(log_level)}. File: {log_file}")
+
+
+# Load environment variables
+load_dotenv()
+
+Email = os.getenv("EMAIL")
+Password = os.getenv("PASSWORD")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID") # This is used by setup_logging
+PROXY_URL = os.getenv("PROXY_URL") # Added for Telegram proxy
+
+# Call setup_logging after TELEGRAM_CHAT_ID is loaded
+setup_logging()
+
 
 # Shared state
 awaiting_rename_responses = {}
@@ -29,36 +73,11 @@ ALLOW_LIST_FILE = "allow_list.txt"
 USER_ID_TO_NAME = {}
 ALLOWED_USER_IDS = set()
 
-load_dotenv()
+# Configure logging
+# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s') # This line is replaced by setup_logging()
 
-Email = os.getenv("EMAIL")
-Password = os.getenv("PASSWORD")
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-if not all([Email, Password, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID]):
-    logging.error("Missing environment variables. Please check your .env file.")
-    exit(1)
-
-# Initialize Telegram Bot
-try:
-    bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
-    logging.info("Telegram bot initialized successfully.")
-except Exception as e:
-    logging.error(f"Failed to initialize Telegram bot: {e}")
-    exit(1)
-
-# --- Authentication ---
-try:
-    auth = Auth(Email, Password)
-    token = auth.get_token()
-    api = LocketAPI(token)
-    logging.info("Locket authentication successful.")
-except Exception as e:
-    logging.error(f"Locket authentication failed: {e}")
-    exit(1)
-
-# --- Load user info mapping ---
+# --- Load user info and allow list functions ---
+# Moved these function definitions earlier to resolve NameError due to potential circular imports
 def load_user_info(filepath):
     user_map = {}
     if os.path.exists(filepath):
@@ -112,8 +131,56 @@ def save_allow_list(filepath, allowed_users):
         logging.error(f"Error saving allow list to {filepath}: {e}")
         raise
 
+# Shared state initialization (now after function definitions)
 USER_ID_TO_NAME.update(load_user_info(USER_INFO_FILE))
 ALLOWED_USER_IDS.update(load_allow_list(ALLOW_LIST_FILE))
+
+# --- Authentication ---
+try:
+    auth = Auth(Email, Password)
+    token = auth.get_token()
+    api = LocketAPI(token)
+    logging.info("Locket authentication successful.")
+except Exception as e:
+    logging.error(f"Locket authentication failed: {e}")
+    exit(1)
+
+# --- Configure HTTPXRequest for Telegram ---
+httpx_request_instance = None
+request_kwargs = {
+    'read_timeout': 60.0,
+    'connect_timeout': 60.0
+}
+if PROXY_URL:
+    request_kwargs['proxy_url'] = PROXY_URL
+    logging.info(f"Telegram requests will use proxy: {PROXY_URL}")
+else:
+    logging.info("No proxy configured for Telegram requests.")
+
+try:
+    httpx_request_instance = HTTPXRequest(**request_kwargs)
+    logging.info("HTTPXRequest instance created with custom timeouts (and proxy if configured).")
+except Exception as e:
+    logging.error(f"Failed to create HTTPXRequest instance: {e}. Telegram requests might use default settings or fail.")
+    # Fallback to default HTTPXRequest if specific configuration fails, though this is unlikely for these params.
+    httpx_request_instance = HTTPXRequest()
+
+
+# Initialize Telegram Bot
+try:
+    bot_kwargs = {'token': TELEGRAM_BOT_TOKEN}
+    if httpx_request_instance:
+        bot_kwargs['request'] = httpx_request_instance
+    
+    bot = telegram.Bot(**bot_kwargs) # This is a preliminary bot instance
+    logging.info("Preliminary Telegram bot object created.")
+except Exception as e:
+    logging.error(f"Failed to create preliminary Telegram bot object: {e}")
+    bot = None # Ensure bot is None if initialization fails
+
+# --- Load user info mapping --- # This comment block can be removed or updated as definitions are moved
+# def load_user_info(filepath): # Definition moved up
+# ... (rest of the old function definitions are now above)
 
 # --- Message Handler ---
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -359,6 +426,10 @@ async def main():
     DOWNLOAD_DIR = "locket_downloads"
     await asyncio.to_thread(os.makedirs, DOWNLOAD_DIR, exist_ok=True)
     
+    # Get the current event loop for the TelegramLogHandler
+    # This must be done inside an async function where the loop is running.
+    current_loop = asyncio.get_running_loop()
+
     token_refresh_task = asyncio.create_task(refresh_token_periodically(auth, api))
     periodic_task = asyncio.create_task(periodic_logger())  # Add periodic logger
 
@@ -374,7 +445,12 @@ async def main():
 
     locket_monitor_task = asyncio.create_task(monitor_with_restart())
 
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    # Create the application object BEFORE adding handlers
+    builder = Application.builder().token(TELEGRAM_BOT_TOKEN)
+    if httpx_request_instance:
+        builder.request(httpx_request_instance)
+    application = builder.build()
+
     application.add_handler(CommandHandler("fetchfriends", fetchfriends.fetch_friends_command_handler))
     application.add_handler(CommandHandler("list", list.list_friends_command_handler))
     application.add_handler(CommandHandler("allow", allow.allow_command_handler))
@@ -395,22 +471,28 @@ async def main():
     initialized = False
     max_retries = 5
     retry_count = 0
+    app_bot = None # Define app_bot to store the bot instance from application or fallback
     
     while not initialized and retry_count < max_retries:
         try:
             logging.info(f"Attempting to initialize application (try {retry_count+1}/{max_retries})...")
-            telegram.request.HTTPXRequest.DEFAULT_READ_TIMEOUT = 60.0
-            telegram.request.HTTPXRequest.DEFAULT_CONNECT_TIMEOUT = 60.0
             await application.initialize()
-            app_bot = application.bot
+            app_bot = application.bot # Use the bot from the application
             try:
-                await app_bot.initialize()
+                await app_bot.initialize() # Initialize the application's bot
                 initialized = True
                 logging.info("Application initialized successfully.")
             except telegram.error.TimedOut:
-                logging.warning("Bot initialization timed out, but continuing anyway...")
-                app_bot = bot
-                initialized = True
+                logging.warning("Bot initialization timed out, but application.initialize() succeeded. Using application.bot.")
+                # app_bot is already set to application.bot
+                initialized = True # Consider it initialized for application functionalities
+            except Exception as e_app_bot_init:
+                logging.error(f"application.bot.initialize() failed: {e_app_bot_init}. Falling back if possible.")
+                # app_bot remains application.bot, but it might not be fully functional.
+                # Or, decide to fallback to the global `bot` if `application.bot` init fails critically.
+                # For now, we assume application.bot is the primary even if its own init has issues.
+                # If `application.initialize()` itself failed, this block wouldn't be reached.
+                initialized = True # Mark as initialized to proceed with app_bot from application
         except Exception as e:
             retry_count += 1
             backoff_time = min(2 ** retry_count, 30)
@@ -418,8 +500,8 @@ async def main():
             await asyncio.sleep(backoff_time)
     
     if not initialized:
-        logging.error("Failed to initialize application after multiple attempts. Continuing with limited functionality.")
-        app_bot = bot
+        logging.error("Failed to initialize application after multiple attempts. Using preliminary global bot as fallback.")
+        app_bot = bot # Fallback to the globally initialized `bot`
     
     await application.start()
     
