@@ -6,7 +6,7 @@ import logging
 import logging.handlers # Added for FileHandler
 import asyncio
 import html # Added for escaping HTML in Telegram logs
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, Chat, constants as telegram_constants # Added telegram_constants
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, Chat, BotCommand, constants as telegram_constants # Added telegram_constants
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram.request import HTTPXRequest # Added for proxy and custom request settings
 import requests
@@ -424,29 +424,27 @@ async def periodic_logger():
 # --- Register Bot Commands ---
 async def register_bot_commands(bot):
     """Register bot commands with Telegram."""
-    commands = [
-        {"command": "fetchfriends", "description": "Fetch friends list"},
-        {"command": "list", "description": "List friends"},
-        {"command": "allow", "description": "Allow a user"},
-        {"command": "disallow", "description": "Disallow a user"},
-        {"command": "allowlist", "description": "Show allow list"},
-        {"command": "rename", "description": "Rename a user"},
-        {"command": "changeEmail", "description": "Change email"},
-        {"command": "changePhoneNumber", "description": "Change phone number"},
-        {"command": "sendMessage", "description": "Send a message"},
-        {"command": "help", "description": "Show help"},
-        {"command": "clearallowlist", "description": "Clear allow list"},
+    command_specs = [
+        ("fetchfriends", "Fetch friends list"),
+        ("list", "List friends"),
+        ("allow", "Allow a user"),
+        ("disallow", "Disallow a user"),
+        ("allowlist", "Show allow list"),
+        ("rename", "Rename a user"),
+        ("changeemail", "Change email"),
+        ("changephonenumber", "Change phone number"),
+        ("sendmessage", "Send a message"),
+        ("help", "Show help"),
+        ("clearallowlist", "Clear allow list"),
     ]
 
+    bot_commands = [BotCommand(command, description) for command, description in command_specs]
+
     try:
-        await bot.set_my_commands(commands)
+        await bot.set_my_commands(bot_commands)
         logging.info("Bot commands registered successfully.")
     except Exception as e:
         logging.error(f"Failed to register bot commands: {e}")
-
-# Call register_bot_commands during initialization
-if initialized:
-    await register_bot_commands(application.bot)
 
 # --- Main Async Function ---
 async def main():
@@ -485,9 +483,9 @@ async def main():
     application.add_handler(CommandHandler("allowlist", allowlist.allowlist_command_handler))
     application.add_handler(CommandHandler("rename", rename.rename_command_handler))
     application.add_handler(changeinfo.conversation_handler)
-    application.add_handler(CommandHandler("changeEmail", changeemail.change_email_command_handler))
-    application.add_handler(CommandHandler("changePhoneNumber", changephonenumber.change_phone_number_command_handler))
-    application.add_handler(CommandHandler("sendMessage", sendmessage.send_message_command_handler))
+    application.add_handler(CommandHandler(("changeemail", "changeEmail"), changeemail.change_email_command_handler))
+    application.add_handler(CommandHandler(("changephonenumber", "changePhoneNumber"), changephonenumber.change_phone_number_command_handler))
+    application.add_handler(CommandHandler(("sendmessage", "sendMessage"), sendmessage.send_message_command_handler))
     application.add_handler(CommandHandler("help", help.help_command_handler))
     application.add_handler(CommandHandler("clearallowlist", clearallowlist.clearallowlist_command_handler))
     application.add_handler(rename_button_handler)
@@ -537,7 +535,7 @@ async def main():
         try:
             await register_bot_commands(app_bot)
         except Exception as e:
-            logging.error(f"Failed to register bot commands during initialization: {e}")
+            logging.error(f"Failed to register bot commands: {e}")
 
     offset = 0
     retry_delay = 5   # Initial delay in seconds
