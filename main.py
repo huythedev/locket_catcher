@@ -21,34 +21,34 @@ from handlers.buttons import rename_button_handler, send_message_button_handler,
 from filelock import FileLock
 import time
 
-def setup_logging(log_level=logging.INFO, log_file="bot_activity.log"):
-    root_logger = logging.getLogger()
-    root_logger.setLevel(log_level)
+# def setup_logging(log_level=logging.INFO, log_file="bot_activity.log"):
+#     root_logger = logging.getLogger()
+#     root_logger.setLevel(log_level)
 
-    # Clear existing handlers from the root logger
-    for handler in root_logger.handlers[:]:
-        root_logger.removeHandler(handler)
-        handler.close()
+#     # Clear existing handlers from the root logger
+#     for handler in root_logger.handlers[:]:
+#         root_logger.removeHandler(handler)
+#         handler.close()
 
-    # Formatter
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    detailed_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s - %(pathname)s:%(lineno)d')
+#     # Formatter
+#     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+#     detailed_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s - %(pathname)s:%(lineno)d')
 
-    # File Handler
-    try:
-        file_handler = logging.FileHandler(log_file, encoding='utf-8')
-        file_handler.setFormatter(detailed_formatter)
-        root_logger.addHandler(file_handler)
-    except Exception as e:
-        print(f"Failed to set up file logger: {e}")
+#     # File Handler
+#     try:
+#         file_handler = logging.FileHandler(log_file, encoding='utf-8')
+#         file_handler.setFormatter(detailed_formatter)
+#         root_logger.addHandler(file_handler)
+#     except Exception as e:
+#         print(f"Failed to set up file logger: {e}")
 
 
-    # Console Handler
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-    root_logger.addHandler(console_handler)
+#     # Console Handler
+#     console_handler = logging.StreamHandler()
+#     console_handler.setFormatter(formatter)
+#     root_logger.addHandler(console_handler)
 
-    logging.info(f"Logging configured. Level: {logging.getLevelName(log_level)}. File: {log_file}")
+#     logging.info(f"Logging configured. Level: {logging.getLevelName(log_level)}. File: {log_file}")
 
 
 # Load environment variables
@@ -425,25 +425,28 @@ async def periodic_logger():
 async def register_bot_commands(bot):
     """Register bot commands with Telegram."""
     commands = [
-        ("fetchfriends", "Fetch friends list"),
-        ("list", "List friends"),
-        ("allow", "Allow a user"),
-        ("disallow", "Disallow a user"),
-        ("allowlist", "Show allow list"),
-        ("rename", "Rename a user"),
-        ("changeEmail", "Change email"),
-        ("changePhoneNumber", "Change phone number"),
-        ("sendMessage", "Send a message"),
-        ("help", "Show help"),
-        ("clearallowlist", "Clear allow list"),
+        {"command": "fetchfriends", "description": "Fetch friends list"},
+        {"command": "list", "description": "List friends"},
+        {"command": "allow", "description": "Allow a user"},
+        {"command": "disallow", "description": "Disallow a user"},
+        {"command": "allowlist", "description": "Show allow list"},
+        {"command": "rename", "description": "Rename a user"},
+        {"command": "changeEmail", "description": "Change email"},
+        {"command": "changePhoneNumber", "description": "Change phone number"},
+        {"command": "sendMessage", "description": "Send a message"},
+        {"command": "help", "description": "Show help"},
+        {"command": "clearallowlist", "description": "Clear allow list"},
     ]
 
-    bot_commands = [telegram.BotCommand(command, description) for command, description in commands]
     try:
-        await bot.set_my_commands(bot_commands)
+        await bot.set_my_commands(commands)
         logging.info("Bot commands registered successfully.")
     except Exception as e:
         logging.error(f"Failed to register bot commands: {e}")
+
+# Call register_bot_commands during initialization
+if initialized:
+    await register_bot_commands(application.bot)
 
 # --- Main Async Function ---
 async def main():
@@ -531,7 +534,10 @@ async def main():
     
     # Register bot commands with Telegram
     if initialized:
-        await register_bot_commands(app_bot)
+        try:
+            await register_bot_commands(app_bot)
+        except Exception as e:
+            logging.error(f"Failed to register bot commands during initialization: {e}")
 
     offset = 0
     retry_delay = 5   # Initial delay in seconds
