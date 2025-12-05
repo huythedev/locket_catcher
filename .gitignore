@@ -4,3 +4,4 @@ locket_downloads/
 users_info.txt
 allow_list.txt
 venv/
+bot_activity.log

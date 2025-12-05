@@ -21,34 +21,34 @@ from handlers.buttons import rename_button_handler, send_message_button_handler,
 from filelock import FileLock
 import time
 
-# def setup_logging(log_level=logging.INFO, log_file="bot_activity.log"):
-#     root_logger = logging.getLogger()
-#     root_logger.setLevel(log_level)
+def setup_logging(log_level=logging.INFO, log_file="bot_activity.log"):
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
 
-#     # Clear existing handlers from the root logger
-#     for handler in root_logger.handlers[:]:
-#         root_logger.removeHandler(handler)
-#         handler.close()
+    # Clear existing handlers from the root logger
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+        handler.close()
 
-#     # Formatter
-#     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-#     detailed_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s - %(pathname)s:%(lineno)d')
+    # Formatter
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    detailed_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s - %(pathname)s:%(lineno)d')
 
-#     # File Handler
-#     try:
-#         file_handler = logging.FileHandler(log_file, encoding='utf-8')
-#         file_handler.setFormatter(detailed_formatter)
-#         root_logger.addHandler(file_handler)
-#     except Exception as e:
-#         print(f"Failed to set up file logger: {e}")
+    # File Handler
+    try:
+        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        file_handler.setFormatter(detailed_formatter)
+        root_logger.addHandler(file_handler)
+    except Exception as e:
+        print(f"Failed to set up file logger: {e}")
 
 
-#     # Console Handler
-#     console_handler = logging.StreamHandler()
-#     console_handler.setFormatter(formatter)
-#     root_logger.addHandler(console_handler)
+    # Console Handler
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    root_logger.addHandler(console_handler)
 
-#     logging.info(f"Logging configured. Level: {logging.getLevelName(log_level)}. File: {log_file}")
+    logging.info(f"Logging configured. Level: {logging.getLevelName(log_level)}. File: {log_file}")
 
 
 # Load environment variables
@@ -61,6 +61,7 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID") # This is used by setup_logging
 PROXY_URL = os.getenv("PROXY_URL") # Added for Telegram proxy
 
 # Call setup_logging after TELEGRAM_CHAT_ID is loaded
+# Uncomment if you want to use file logging
 # setup_logging()
 
 
@@ -74,6 +75,7 @@ USER_ID_TO_NAME = {}
 ALLOWED_USER_IDS = set()
 
 # Configure logging
+# Uncomment the following line to enable logging to file and console
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s') # This line is replaced by setup_logging()
 
 # --- Load user info and allow list functions ---
@@ -276,7 +278,18 @@ async def locket_monitor_loop(DOWNLOAD_DIR):
                         user_id = moment.get('user')
                         thumbnail_url = moment.get('thumbnail_url')
                         video_url = moment.get('video_url')
-                        caption = moment.get('caption', 'No caption')
+                        
+                        caption = None
+                        overlays = moment.get('overlays') or []
+                        for overlay in overlays:
+                            if overlay.get('overlay_type') == 'caption':
+                                caption = overlay.get('alt_text')
+                                if caption:
+                                    break
+                        
+                        if not caption:
+                            caption = moment.get('caption', 'No caption')
+
                         moment_date_seconds = moment.get('date', {}).get('_seconds', 'N/A')
 
                         if moment_id and user_id and (thumbnail_url or video_url):
