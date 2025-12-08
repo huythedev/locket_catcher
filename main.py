@@ -21,6 +21,15 @@ from handlers.buttons import rename_button_handler, send_message_button_handler,
 from filelock import FileLock
 import time
 
+# Load environment variables
+load_dotenv()
+
+# Logging and download config from .env
+LOG_TO_TERMINAL = os.getenv("LOG_TO_TERMINAL", "true").lower() == "true"
+LOG_TO_FILE = os.getenv("LOG_TO_FILE", "false").lower() == "true"
+KEEP_LOCAL_DOWNLOADS = os.getenv("KEEP_LOCAL_DOWNLOADS", "true").lower() == "true"
+
+
 def setup_logging(log_level=logging.INFO, log_file="bot_activity.log"):
     root_logger = logging.getLogger()
     root_logger.setLevel(log_level)
@@ -34,25 +43,23 @@ def setup_logging(log_level=logging.INFO, log_file="bot_activity.log"):
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     detailed_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s - %(pathname)s:%(lineno)d')
 
-    # File Handler
-    try:
-        file_handler = logging.FileHandler(log_file, encoding='utf-8')
-        file_handler.setFormatter(detailed_formatter)
-        root_logger.addHandler(file_handler)
-    except Exception as e:
-        print(f"Failed to set up file logger: {e}")
+    # File Handler (controlled by LOG_TO_FILE)
+    if LOG_TO_FILE:
+        try:
+            file_handler = logging.FileHandler(log_file, encoding='utf-8')
+            file_handler.setFormatter(detailed_formatter)
+            root_logger.addHandler(file_handler)
+        except Exception as e:
+            print(f"Failed to set up file logger: {e}")
 
+    # Console Handler (controlled by LOG_TO_TERMINAL)
+    if LOG_TO_TERMINAL:
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        root_logger.addHandler(console_handler)
 
-    # Console Handler
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-    root_logger.addHandler(console_handler)
+    logging.info(f"Logging configured. Level: {logging.getLevelName(log_level)}. File: {log_file}. Terminal: {LOG_TO_TERMINAL}, File: {LOG_TO_FILE}")
 
-    logging.info(f"Logging configured. Level: {logging.getLevelName(log_level)}. File: {log_file}")
-
-
-# Load environment variables
-load_dotenv()
 
 Email = os.getenv("EMAIL")
 Password = os.getenv("PASSWORD")
@@ -60,9 +67,9 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID") # This is used by setup_logging
 PROXY_URL = os.getenv("PROXY_URL") # Added for Telegram proxy
 
+
 # Call setup_logging after TELEGRAM_CHAT_ID is loaded
-# Uncomment if you want to use file logging
-# setup_logging()
+setup_logging()
 
 
 # Shared state
@@ -398,6 +405,18 @@ async def locket_monitor_loop(DOWNLOAD_DIR):
                                         logging.error(f"Failed to send Telegram notification for {moment_id}: {tg_err}")
                                     except Exception as send_err:
                                         logging.error(f"An unexpected error occurred sending Telegram for {moment_id}: {send_err}")
+
+                                    # Remove local file after sending if KEEP_LOCAL_DOWNLOADS is false
+                                    if not KEEP_LOCAL_DOWNLOADS:
+                                        try:
+                                            if media_type == "mp4" and os.path.exists(mp4_path):
+                                                os.remove(mp4_path)
+                                                logging.info(f"Removed local video file: {mp4_path}")
+                                            elif media_type == "png" and os.path.exists(png_path):
+                                                os.remove(png_path)
+                                                logging.info(f"Removed local image file: {png_path}")
+                                        except Exception as remove_err:
+                                            logging.error(f"Failed to remove local file for moment {moment_id}: {remove_err}")
 
                                 except requests.exceptions.RequestException as req_err:
                                     logging.error(f"Failed to download media for {moment_id}: {req_err}")
