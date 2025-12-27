@@ -73,4 +73,4 @@ async def deny_command_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         text="\n\n".join(response_parts) if response_parts else "No changes made.",
         parse_mode="Markdown"
     )
-        )
+
