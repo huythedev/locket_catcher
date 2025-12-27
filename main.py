@@ -496,21 +496,23 @@ async def periodic_logger():
 async def register_bot_commands(bot):
     """Register bot commands with Telegram."""
     command_specs = [
-        ("fetchfriends", "Fetch friends list"),
-        ("list", "List friends"),
-        ("watch", "Watch user(s) - whitelist mode"),
-        ("unwatch", "Stop watching user(s)"),
-        ("watchlist", "Show watched users"),
-        ("clearwatchlist", "Clear watch list"),
-        ("deny", "Block user(s)"),
-        ("allow", "Unblock user(s)"),
-        ("allowlist", "Show blocked users"),
-        ("clearallowlist", "Unblock all users"),
-        ("rename", "Rename a user"),
-        ("changeemail", "Change email"),
-        ("changephonenumber", "Change phone number"),
-        ("sendmessage", "Send a message"),
-        ("help", "Show help"),
+        ("help", "📋 Show all commands"),
+        ("list", "👥 List all friends"),
+        ("fetchfriends", "🔄 Fetch friends from Locket"),
+        ("watch", "👁️ Watch user(s) - only get their notifications"),
+        ("unwatch", "👁️‍🗨️ Stop watching user(s)"),
+        ("watchlist", "📝 Show watched users"),
+        ("clearwatchlist", "🗑️ Clear watch list"),
+        ("deny", "🚫 Block user(s)"),
+        ("disallow", "🚫 Block a user"),
+        ("allow", "✅ Unblock user(s)"),
+        ("allowlist", "📝 Show blocked users"),
+        ("clearallowlist", "🗑️ Unblock all users"),
+        ("rename", "✏️ Rename a user"),
+        ("sendmessage", "💬 Send a message to user"),
+        ("changeinfo", "👤 Change your Locket name"),
+        ("changeemail", "📧 Change your Locket email"),
+        ("changephonenumber", "📱 Change your Locket phone"),
     ]
 
     bot_commands = [BotCommand(command, description) for command, description in command_specs]
