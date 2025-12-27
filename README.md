@@ -6,8 +6,9 @@ Downloads new Locket moments from your friends and sends notifications with the 
 
 *   **Downloads Locket moments**: Videos are saved as MP4 if a direct video URL is provided by the API; otherwise, images (from thumbnails) are saved as PNG.
 *   **Sends media to Telegram**: Downloaded MP4 videos or PNG images are sent to your specified Telegram chat.
-*   **User allow-list**: Optionally restrict notifications to specific users by listing their Locket User IDs in `allow_list.txt`.
-    *   Add or remove users from the allow-list using `/allow <userid>`, `/disallow <userid>`, and view the list with `/allowlist`.
+*   **Flexible notification filtering**: Choose between two modes:
+    *   **Whitelist mode**: Use `/watch` to only receive notifications from specific users (great if you only care about a few people)
+    *   **Blacklist mode** (default): Use `/deny` to block specific users (great if you want everyone except a few)
 *   **User-friendly notifications**: Each notification includes the user's display name and an inline "✏️ Rename User" button for easy renaming.
 *   **User Name Management**:
     *   Rename Locket users for display in notifications via the `/rename <LocketUserID> <NewDisplayName>` command.
@@ -65,15 +66,21 @@ Downloads new Locket moments from your friends and sends notifications with the 
     ```
     Replace `user_id_string` with the actual Locket user ID and `Custom Name` with the desired display name.
 
-5.  **(Optional) Create `allow_list.txt`:**
-    To receive notifications only for specific Locket users, create a file named `allow_list.txt` in the root directory of the project.
-    Add one Locket User ID per line in this file. For example:
+5.  **(Optional) Configure notification filtering:**
+    
+    **Whitelist mode** - Only receive from specific users (use `/watch` command or create `watched_users.txt`):
     ```
-    user_id_1_to_allow
-    another_user_id_to_allow
+    user_id_to_watch
+    another_user_id_to_watch
     ```
-    If this file is empty or does not exist, you will receive notifications for all users.
-    An example file `allow_list.txt.example` is provided to show the format.
+    
+    **Blacklist mode** (default) - Block specific users (use `/deny` command or create `blocked_users.txt`):
+    ```
+    user_id_to_block
+    another_user_id_to_block
+    ```
+    
+    If watch list has entries, whitelist mode is active. Otherwise, blacklist mode is used.
 
 ### User Info (`users_info.txt`)
 

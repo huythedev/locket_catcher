@@ -2,6 +2,7 @@
 __pycache__/
 locket_downloads/
 users_info.txt
-allow_list.txt
+blocked_users.txt
+watched_users.txt
 venv/
 bot_activity.log

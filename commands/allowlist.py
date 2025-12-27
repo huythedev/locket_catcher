@@ -4,22 +4,22 @@ import main
 import logging
 
 async def allowlist_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles the /allowlist command to display all user IDs in allow_list.txt."""
+    """Handles the /allowlist command to display all blocked user IDs."""
     chat_id = update.effective_chat.id
 
-    if not main.ALLOWED_USER_IDS:
+    if not main.BLOCKED_USER_IDS:
         await context.bot.send_message(
             chat_id=chat_id,
-            text="❌ No user IDs found in the allow list. Use /allow to add users.",
+            text="✅ No users are blocked. You receive notifications from everyone.\nUse /deny to block users.",
             parse_mode="Markdown"
         )
         return
 
-    # Prepare the allow list in chunks
-    user_ids = sorted(main.ALLOWED_USER_IDS)  # Sort for consistent display
+    # Prepare the blocked users list in chunks
+    user_ids = sorted(main.BLOCKED_USER_IDS)  # Sort for consistent display
     chunk_size = 20  # Number of user IDs per message
     messages = []
-    current_message = ["*Allow List:*"]
+    current_message = ["*🚫 Blocked Users:*"]
     current_length = len(current_message[0]) + 2  # Account for Markdown and newline
 
     for i, user_id in enumerate(user_ids, 1):
@@ -30,7 +30,7 @@ async def allowlist_command_handler(update: Update, context: ContextTypes.DEFAUL
         # Check if adding this entry exceeds the Telegram message limit
         if current_length + entry_length > 4000:
             messages.append(current_message)
-            current_message = ["*Allow List (continued):*"]
+            current_message = ["*🚫 Blocked Users (continued):*"]
             current_length = len(current_message[0]) + 2
 
         current_message.append(entry)
@@ -49,4 +49,4 @@ async def allowlist_command_handler(update: Update, context: ContextTypes.DEFAUL
             parse_mode="Markdown"
         )
 
-    logging.info(f"Sent allow list to chat {chat_id}. Total users: {len(main.ALLOWED_USER_IDS)}")
+    logging.info(f"Sent blocked users list to chat {chat_id}. Total blocked: {len(main.BLOCKED_USER_IDS)}")

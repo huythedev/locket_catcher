@@ -1,0 +1,10 @@
+# Whitelist mode: Only receive notifications from users listed here.
+# Add one user ID per line.
+# If this file has entries, you will ONLY receive notifications from these users.
+# If this file is empty, blacklist mode is used instead (blocked_users.txt).
+#
+# Example:
+# user_id_1
+# user_id_2
+# best_friend_user_id
+

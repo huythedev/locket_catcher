@@ -11,9 +11,9 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from telegram.request import HTTPXRequest # Added for proxy and custom request settings
 import requests
 from commands import (
-    fetchfriends, list, allow, disallow, allowlist, rename,
+    fetchfriends, list, allow, disallow, deny, allowlist, rename,
     changeinfo, changeemail, changephonenumber, sendmessage,
-    help, clearallowlist
+    help, clearallowlist, watch, unwatch, watchlist, clearwatchlist
 )
 from utils.token import refresh_token_periodically
 from utils.download import download_video_file_sync, download_and_convert_image_to_png_sync
@@ -77,9 +77,11 @@ awaiting_rename_responses = {}
 user_states = {}
 FRIENDS_LIST = set()
 USER_INFO_FILE = "users_info.txt"
-ALLOW_LIST_FILE = "allow_list.txt"
+BLOCKED_USERS_FILE = "blocked_users.txt"
+WATCHED_USERS_FILE = "watched_users.txt"
 USER_ID_TO_NAME = {}
-ALLOWED_USER_IDS = set()
+BLOCKED_USER_IDS = set()
+WATCHED_USER_IDS = set()
 
 # Configure logging
 # Uncomment the following line to enable logging to file and console
@@ -112,8 +114,8 @@ def save_user_info(filepath, user_map):
             for userid, name in user_map.items():
                 f.write(f"{userid}:{name}\n")
 
-def load_allow_list(filepath):
-    allowed_users = set()
+def load_blocked_users(filepath):
+    blocked_users = set()
     if os.path.exists(filepath):
         try:
             with FileLock(filepath + ".lock"):
@@ -121,28 +123,57 @@ def load_allow_list(filepath):
                     for line in f:
                         line = line.strip()
                         if line and not line.startswith("#"):
-                            allowed_users.add(line)
-            logging.info(f"Loaded {len(allowed_users)} user(s) from allow list: {filepath}")
+                            blocked_users.add(line)
+            logging.info(f"Loaded {len(blocked_users)} user(s) from blocked users list: {filepath}")
         except Exception as e:
-            logging.error(f"Error loading allow list from {filepath}: {e}")
+            logging.error(f"Error loading blocked users list from {filepath}: {e}")
     else:
-        logging.info(f"Allow list file not found: {filepath}. Notifications will be sent for all users.")
-    return allowed_users
+        logging.info(f"Blocked users file not found: {filepath}. Notifications will be sent for all users.")
+    return blocked_users
 
-def save_allow_list(filepath, allowed_users):
+def save_blocked_users(filepath, blocked_users):
     try:
         with FileLock(filepath + ".lock"):
             with open(filepath, "w", encoding="utf-8") as f:
-                for userid in allowed_users:
+                for userid in blocked_users:
                     f.write(f"{userid}\n")
-        logging.info(f"Saved {len(allowed_users)} user(s) to allow list: {filepath}")
+        logging.info(f"Saved {len(blocked_users)} user(s) to blocked users list: {filepath}")
     except Exception as e:
-        logging.error(f"Error saving allow list to {filepath}: {e}")
+        logging.error(f"Error saving blocked users list to {filepath}: {e}")
+        raise
+
+def load_watched_users(filepath):
+    watched_users = set()
+    if os.path.exists(filepath):
+        try:
+            with FileLock(filepath + ".lock"):
+                with open(filepath, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#"):
+                            watched_users.add(line)
+            logging.info(f"Loaded {len(watched_users)} user(s) from watched users list: {filepath}")
+        except Exception as e:
+            logging.error(f"Error loading watched users list from {filepath}: {e}")
+    else:
+        logging.info(f"Watched users file not found: {filepath}.")
+    return watched_users
+
+def save_watched_users(filepath, watched_users):
+    try:
+        with FileLock(filepath + ".lock"):
+            with open(filepath, "w", encoding="utf-8") as f:
+                for userid in watched_users:
+                    f.write(f"{userid}\n")
+        logging.info(f"Saved {len(watched_users)} user(s) to watched users list: {filepath}")
+    except Exception as e:
+        logging.error(f"Error saving watched users list to {filepath}: {e}")
         raise
 
 # Shared state initialization (now after function definitions)
 USER_ID_TO_NAME.update(load_user_info(USER_INFO_FILE))
-ALLOWED_USER_IDS.update(load_allow_list(ALLOW_LIST_FILE))
+BLOCKED_USER_IDS.update(load_blocked_users(BLOCKED_USERS_FILE))
+WATCHED_USER_IDS.update(load_watched_users(WATCHED_USERS_FILE))
 
 # --- Authentication ---
 try:
@@ -261,7 +292,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 # --- Locket Monitoring Loop ---
 async def locket_monitor_loop(DOWNLOAD_DIR):
-    global USER_ID_TO_NAME, ALLOWED_USER_IDS
+    global USER_ID_TO_NAME, BLOCKED_USER_IDS, WATCHED_USER_IDS
     logging.info("Starting Locket monitoring loop...")
     
     retry_delay = 10  # Initial delay in seconds
@@ -269,11 +300,13 @@ async def locket_monitor_loop(DOWNLOAD_DIR):
     
     while True:
         try:
-            # Reload user info and allow list
+            # Reload user info, blocked users, and watched users
             USER_ID_TO_NAME.update(load_user_info(USER_INFO_FILE))
-            ALLOWED_USER_IDS.clear()
-            ALLOWED_USER_IDS.update(load_allow_list(ALLOW_LIST_FILE))
-            logging.debug("Reloaded allow list in locket_monitor_loop")
+            BLOCKED_USER_IDS.clear()
+            BLOCKED_USER_IDS.update(load_blocked_users(BLOCKED_USERS_FILE))
+            WATCHED_USER_IDS.clear()
+            WATCHED_USER_IDS.update(load_watched_users(WATCHED_USERS_FILE))
+            logging.debug("Reloaded user lists in locket_monitor_loop")
 
             moment_response = await asyncio.to_thread(api.getLastMoment)
             if moment_response.get('result', {}).get('status') == 200:
@@ -300,8 +333,14 @@ async def locket_monitor_loop(DOWNLOAD_DIR):
                         moment_date_seconds = moment.get('date', {}).get('_seconds', 'N/A')
 
                         if moment_id and user_id and (thumbnail_url or video_url):
-                            if ALLOWED_USER_IDS and user_id not in ALLOWED_USER_IDS:
-                                logging.info(f"User {user_id} is not in the allow list. Skipping notification for moment {moment_id}.")
+                            # Whitelist mode: if watched_users has entries, only allow those users
+                            if WATCHED_USER_IDS:
+                                if user_id not in WATCHED_USER_IDS:
+                                    logging.info(f"User {user_id} is not in watch list. Skipping notification for moment {moment_id}.")
+                                    continue
+                            # Blacklist mode: if no watch list, check blocked users
+                            elif user_id in BLOCKED_USER_IDS:
+                                logging.info(f"User {user_id} is blocked. Skipping notification for moment {moment_id}.")
                                 continue
 
                             user_dir = os.path.join(DOWNLOAD_DIR, user_id)
@@ -459,15 +498,19 @@ async def register_bot_commands(bot):
     command_specs = [
         ("fetchfriends", "Fetch friends list"),
         ("list", "List friends"),
-        ("allow", "Allow a user"),
-        ("disallow", "Disallow a user"),
-        ("allowlist", "Show allow list"),
+        ("watch", "Watch user(s) - whitelist mode"),
+        ("unwatch", "Stop watching user(s)"),
+        ("watchlist", "Show watched users"),
+        ("clearwatchlist", "Clear watch list"),
+        ("deny", "Block user(s)"),
+        ("allow", "Unblock user(s)"),
+        ("allowlist", "Show blocked users"),
+        ("clearallowlist", "Unblock all users"),
         ("rename", "Rename a user"),
         ("changeemail", "Change email"),
         ("changephonenumber", "Change phone number"),
         ("sendmessage", "Send a message"),
         ("help", "Show help"),
-        ("clearallowlist", "Clear allow list"),
     ]
 
     bot_commands = [BotCommand(command, description) for command, description in command_specs]
@@ -510,9 +553,15 @@ async def main():
 
     application.add_handler(CommandHandler("fetchfriends", fetchfriends.fetch_friends_command_handler))
     application.add_handler(CommandHandler("list", list.list_friends_command_handler))
+    application.add_handler(CommandHandler("watch", watch.watch_command_handler))
+    application.add_handler(CommandHandler("unwatch", unwatch.unwatch_command_handler))
+    application.add_handler(CommandHandler("watchlist", watchlist.watchlist_command_handler))
+    application.add_handler(CommandHandler("clearwatchlist", clearwatchlist.clearwatchlist_command_handler))
     application.add_handler(CommandHandler("allow", allow.allow_command_handler))
     application.add_handler(CommandHandler("disallow", disallow.disallow_command_handler))
+    application.add_handler(CommandHandler("deny", deny.deny_command_handler))
     application.add_handler(CommandHandler("allowlist", allowlist.allowlist_command_handler))
+    application.add_handler(CommandHandler("clearallowlist", clearallowlist.clearallowlist_command_handler))
     application.add_handler(CommandHandler("rename", rename.rename_command_handler))
     application.add_handler(changeinfo.conversation_handler)
     application.add_handler(CommandHandler(("changeemail", "changeEmail"), changeemail.change_email_command_handler))

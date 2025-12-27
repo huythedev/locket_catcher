@@ -1,0 +1,9 @@
+# This file lists Locket user IDs that are blocked from sending you notifications.
+# Add one user ID per line.
+# If this file is empty or does not exist, you will receive notifications from all users.
+#
+# Example:
+# user_id_1
+# user_id_2
+# another_user_id_here
+
